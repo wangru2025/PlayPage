@@ -24,7 +24,7 @@ const (
 var planTable = map[string]PlanSpec{
 	PlanFree: {
 		Code:                PlanFree,
-		Name:                "\u514d\u8d39\u7248",
+		Name:                "免费版",
 		MonthlyPriceFen:     0,
 		MaxProjects:         5,
 		MaxInteractionBytes: 10 * 1024 * 1024,
@@ -33,7 +33,7 @@ var planTable = map[string]PlanSpec{
 	},
 	PlanLight: {
 		Code:                PlanLight,
-		Name:                "\u8f7b\u4eab\u7248",
+		Name:                "轻享版",
 		MonthlyPriceFen:     300,
 		MaxProjects:         10,
 		MaxInteractionBytes: 30 * 1024 * 1024,
@@ -42,7 +42,7 @@ var planTable = map[string]PlanSpec{
 	},
 	PlanSupport: {
 		Code:                PlanSupport,
-		Name:                "\u652f\u6301\u7248",
+		Name:                "支持版",
 		MonthlyPriceFen:     600,
 		MaxProjects:         30,
 		MaxInteractionBytes: 100 * 1024 * 1024,
@@ -51,7 +51,7 @@ var planTable = map[string]PlanSpec{
 	},
 	PlanAdmin: {
 		Code:                PlanAdmin,
-		Name:                "\u6700\u9ad8\u7ba1\u7406\u5458",
+		Name:                "最高管理员",
 		MonthlyPriceFen:     0,
 		MaxProjects:         10000000,
 		MaxInteractionBytes: 1 << 50,

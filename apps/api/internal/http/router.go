@@ -126,7 +126,7 @@ func (rt *Router) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/projects/")
 	parts := strings.Split(path, "/")
 	if len(parts) == 0 || parts[0] == "" {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "\u627e\u4e0d\u5230\u8fd9\u4e2a\u4f5c\u54c1"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "找不到这个作品"})
 		return
 	}
 
@@ -189,7 +189,7 @@ func (rt *Router) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 	case len(parts) == 4 && parts[1] == "collections" && parts[3] == "records" && r.Method == http.MethodPost:
 		rt.handleCreateRecord(w, r, projectID, parts[2])
 	default:
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "\u6ca1\u6709\u627e\u5230\u8fd9\u4e2a\u63a5\u53e3"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "没有找到这个接口"})
 	}
 }
 
@@ -203,17 +203,17 @@ func (rt *Router) handleHealth(w http.ResponseWriter, _ *http.Request) {
 func (rt *Router) handleMe(w http.ResponseWriter, r *http.Request) {
 	user, ok, err := rt.currentUser(r)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u8bfb\u53d6\u767b\u5f55\u72b6\u6001\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取登录状态失败"})
 		return
 	}
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "\u4f60\u8fd8\u6ca1\u6709\u767b\u5f55"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "你还没有登录"})
 		return
 	}
 
 	csrfToken, err := ensureCSRFCookie(w, r)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u751f\u6210\u5b89\u5168\u4ee4\u724c\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "生成安全令牌失败"})
 		return
 	}
 
@@ -224,35 +224,35 @@ func (rt *Router) handleMe(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) handleRequestCode(w http.ResponseWriter, r *http.Request) {
 	var input domain.AuthCodeRequestInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "\u8bf7\u6c42\u5185\u5bb9\u683c\u5f0f\u4e0d\u6b63\u786e"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容格式不正确"})
 		return
 	}
 
 	input.Email = strings.TrimSpace(strings.ToLower(input.Email))
 	input.Username = normalizePathSegment(input.Username)
 	if input.Email == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "\u8bf7\u5148\u586b\u5199\u90ae\u7bb1"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请先填写邮箱"})
 		return
 	}
 	if _, err := mail.ParseAddress(input.Email); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "\u90ae\u7bb1\u5730\u5740\u683c\u5f0f\u4e0d\u5bf9"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "邮箱地址格式不对"})
 		return
 	}
 
 	code, err := generateDigits(6)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u751f\u6210\u9a8c\u8bc1\u7801\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "生成验证码失败"})
 		return
 	}
 
 	expiresAt := time.Now().UTC().Add(10 * time.Minute)
 	if err := rt.store.CreateOrRefreshAuthCode(r.Context(), input, code, expiresAt); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u4fdd\u5b58\u9a8c\u8bc1\u7801\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "保存验证码失败"})
 		return
 	}
 
 	if err := rt.mailer.SendCode(input.Email, code); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u53d1\u9001\u9a8c\u8bc1\u90ae\u4ef6\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "发送验证邮件失败"})
 		return
 	}
 
@@ -271,14 +271,14 @@ func (rt *Router) handleRequestCode(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) handleVerifyCode(w http.ResponseWriter, r *http.Request) {
 	var input domain.AuthCodeVerifyInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "\u8bf7\u6c42\u5185\u5bb9\u683c\u5f0f\u4e0d\u6b63\u786e"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容格式不正确"})
 		return
 	}
 
 	input.Email = strings.TrimSpace(strings.ToLower(input.Email))
 	input.Code = strings.TrimSpace(input.Code)
 	if input.Email == "" || input.Code == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "\u90ae\u7bb1\u548c\u9a8c\u8bc1\u7801\u90fd\u8981\u586b"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "邮箱和验证码都要填"})
 		return
 	}
 
@@ -294,19 +294,19 @@ func (rt *Router) handleVerifyCode(w http.ResponseWriter, r *http.Request) {
 
 	token, err := generateToken(32)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u521b\u5efa\u767b\u5f55\u4f1a\u8bdd\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "创建登录会话失败"})
 		return
 	}
 
 	expiresAt := time.Now().UTC().Add(30 * 24 * time.Hour)
 	if err := rt.store.CreateSession(r.Context(), user.ID, token, expiresAt); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u4fdd\u5b58\u767b\u5f55\u4f1a\u8bdd\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "保存登录会话失败"})
 		return
 	}
 
 	csrfToken, err := generateToken(32)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u751f\u6210\u5b89\u5168\u4ee4\u724c\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "生成安全令牌失败"})
 		return
 	}
 
@@ -362,22 +362,22 @@ func (rt *Router) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	var input domain.UserProfileUpdateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "\u8bf7\u6c42\u5185\u5bb9\u683c\u5f0f\u4e0d\u6b63\u786e"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容格式不正确"})
 		return
 	}
 	input.Username = normalizePathSegment(input.Username)
 	if input.Username == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "\u7528\u6237\u540d\u4e0d\u80fd\u4e3a\u7a7a"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "用户名不能为空"})
 		return
 	}
 
 	updated, err := rt.store.UpdateUserUsername(r.Context(), user.ID, input.Username)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u4fdd\u5b58\u7528\u6237\u540d\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "保存用户名失败"})
 		return
 	}
 	if err := rt.store.SyncProjectUsernames(r.Context(), user.ID, updated.Username); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u540c\u6b65\u4f5c\u54c1\u5730\u5740\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "同步作品地址失败"})
 		return
 	}
 	if shouldSendWelcomeAfterProfileUpdate(user, updated) {
@@ -426,11 +426,11 @@ func bearerToken(r *http.Request) string {
 func (rt *Router) requireUser(w http.ResponseWriter, r *http.Request) (domain.User, bool) {
 	user, ok, err := rt.currentUser(r)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u8bfb\u53d6\u767b\u5f55\u72b6\u6001\u5931\u8d25"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取登录状态失败"})
 		return domain.User{}, false
 	}
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "\u8bf7\u5148\u767b\u5f55"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "请先登录"})
 		return domain.User{}, false
 	}
 	return user, true
@@ -470,21 +470,21 @@ func (rt *Router) withCSRF(next http.Handler) http.Handler {
 			return
 		}
 		if err != nil {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "\u5b89\u5168\u4ee4\u724c\u65e0\u6548\uff0c\u8bf7\u5237\u65b0\u9875\u9762\u540e\u91cd\u8bd5", "code": csrfErrorCode})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "安全令牌无效，请刷新页面后重试", "code": csrfErrorCode})
 			return
 		}
 
 		csrfCookie, err := r.Cookie(csrfCookieName)
 		if err != nil || csrfCookie.Value == "" || r.Header.Get(csrfHeaderName) == "" || csrfCookie.Value != r.Header.Get(csrfHeaderName) {
 			if _, ok, userErr := rt.currentUser(r); userErr != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u8bfb\u53d6\u767b\u5f55\u72b6\u6001\u5931\u8d25"})
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取登录状态失败"})
 				return
 			} else if ok {
 				if token, tokenErr := ensureCSRFCookie(w, r); tokenErr == nil {
 					w.Header().Set("X-CSRF-Token", token)
 				}
 			}
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "\u5b89\u5168\u4ee4\u724c\u5df2\u5237\u65b0\uff0c\u8bf7\u91cd\u8bd5", "code": csrfErrorCode})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "安全令牌已刷新，请重试", "code": csrfErrorCode})
 			return
 		}
 
@@ -655,7 +655,7 @@ func inferUsernameFromEmail(email string) string {
 
 	name = normalizePathSegment(name)
 	if name == "" {
-		return "\u65b0\u670b\u53cb"
+		return "新朋友"
 	}
 	return name
 }

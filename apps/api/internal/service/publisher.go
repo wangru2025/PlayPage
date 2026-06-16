@@ -133,7 +133,7 @@ func (p *Publisher) PublishPatchedHTML(ctx context.Context, project domain.Proje
 
 func (p *Publisher) CreatePreview(project domain.Project, sourcePublicDir, entryFile, jobID string, body []byte) (string, error) {
 	if strings.TrimSpace(jobID) == "" {
-		return "", fmt.Errorf("????????")
+		return "", fmt.Errorf("预览任务 ID 不能为空")
 	}
 	previewDir := p.layout.PreviewDir(jobID)
 	if err := os.RemoveAll(previewDir); err != nil {
@@ -159,7 +159,7 @@ func (p *Publisher) CreatePreview(project domain.Project, sourcePublicDir, entry
 
 func copyStaticDir(sourceDir, targetDir string) error {
 	if strings.TrimSpace(sourceDir) == "" {
-		return fmt.Errorf("???????")
+		return fmt.Errorf("源目录不能为空")
 	}
 	sourceAbs, err := filepath.Abs(sourceDir)
 	if err != nil {
@@ -170,7 +170,7 @@ func copyStaticDir(sourceDir, targetDir string) error {
 		return err
 	}
 	if sourceAbs == targetAbs {
-		return fmt.Errorf("????????????")
+		return fmt.Errorf("源目录和目标目录不能相同")
 	}
 	return filepath.WalkDir(sourceAbs, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -184,7 +184,7 @@ func copyStaticDir(sourceDir, targetDir string) error {
 			return os.MkdirAll(targetAbs, 0o755)
 		}
 		if strings.HasPrefix(rel, "..") {
-			return fmt.Errorf("???????")
+			return fmt.Errorf("文件路径越界")
 		}
 		dest := filepath.Join(targetAbs, rel)
 		info, err := d.Info()
@@ -192,7 +192,7 @@ func copyStaticDir(sourceDir, targetDir string) error {
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("???????")
+			return fmt.Errorf("不允许复制软链接")
 		}
 		if d.IsDir() {
 			return os.MkdirAll(dest, 0o755)

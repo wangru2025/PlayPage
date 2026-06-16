@@ -77,7 +77,7 @@ async function refreshCSRFToken(): Promise<void> {
 async function parseError(response: Response): Promise<{ message: string; code: string }> {
   const payload = await response.json().catch(() => null);
   return {
-    message: payload?.error ?? `?????????${response.status}`,
+    message: payload?.error ?? `请求失败，状态码：${response.status}`,
     code: payload?.code ?? ""
   };
 }
@@ -111,7 +111,7 @@ export async function getJSON<T>(path: string): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`?????????${response.status}`);
+    throw new Error(`请求失败，状态码：${response.status}`);
   }
 
   return response.json() as Promise<T>;

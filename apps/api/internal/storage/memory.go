@@ -472,7 +472,7 @@ func (s *MemoryStore) ListRecords(_ context.Context, projectID, collectionName s
 func (s *MemoryStore) CreateRecord(_ context.Context, projectID, collectionName, createdByUserID string, input domain.RecordCreateInput) (domain.Record, error) {
 	collection, ok, _ := s.GetCollectionByName(context.Background(), projectID, collectionName)
 	if !ok {
-		return domain.Record{}, fmt.Errorf("\u627e\u4e0d\u5230\u8fd9\u4e2a\u96c6\u5408")
+		return domain.Record{}, fmt.Errorf("找不到这个集合")
 	}
 
 	record := domain.Record{
@@ -881,7 +881,7 @@ func (s *MemoryStore) UpdateRepairAIJob(_ context.Context, job domain.RepairAIJo
 	defer s.mu.Unlock()
 	current, ok := s.repairAIJobs[job.ID]
 	if !ok {
-		return domain.RepairAIJob{}, fmt.Errorf("????? AI ??")
+		return domain.RepairAIJob{}, fmt.Errorf("找不到 AI 圆桌")
 	}
 	if job.CreatedAt.IsZero() {
 		job.CreatedAt = current.CreatedAt

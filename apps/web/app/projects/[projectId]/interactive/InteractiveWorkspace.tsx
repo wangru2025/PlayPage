@@ -52,40 +52,40 @@ type InteractiveDocResponse = {
 };
 
 const text = {
-  back: "\u8fd4\u56de\u4f5c\u54c1\u5217\u8868",
-  title: "\u4e92\u52a8\u529f\u80fd",
-  loading: "\u6b63\u5728\u8bfb\u53d6\u4e92\u52a8\u529f\u80fd\u8bbe\u7f6e\u3002",
-  disabled: "\u8fd9\u4e2a\u4f5c\u54c1\u8fd8\u6ca1\u6709\u542f\u7528\u4e92\u52a8\u529f\u80fd\u3002",
-  empty: "\u8fd9\u4e2a\u4f5c\u54c1\u8fd8\u6ca1\u6709\u5efa\u7acb\u4efb\u4f55\u4f5c\u54c1\u6570\u636e\u8868\u3002",
-  docButton: "\u590d\u5236 API \u6587\u6863",
-  docDone: "API \u6587\u6863\u5df2\u7ecf\u590d\u5236\u3002",
-  docFail: "\u590d\u5236\u5931\u8d25\uff0c\u8bf7\u4ece\u4e0b\u9762\u7684\u6587\u672c\u6846\u624b\u52a8\u590d\u5236\u3002",
-  sectionData: "\u4f5c\u54c1\u6570\u636e",
-  sectionHelp: "\u7ed9 AI \u7684\u8bf4\u660e",
+  back: "返回作品列表",
+  title: "互动功能",
+  loading: "正在读取互动功能设置。",
+  disabled: "这个作品还没有启用互动功能。",
+  empty: "这个作品还没有建立任何作品数据表。",
+  docButton: "复制 API 文档",
+  docDone: "API 文档已经复制。",
+  docFail: "复制失败，请从下面的文本框手动复制。",
+  sectionData: "作品数据",
+  sectionHelp: "给 AI 的说明",
   help:
-    "\u628a\u4e0b\u9762\u751f\u6210\u7684 API \u6587\u6863\u590d\u5236\u7ed9 AI\uff0c\u518d\u544a\u8bc9\u5b83\u4f60\u60f3\u505a\u4ec0\u4e48\u9875\u9762\u3001\u8981\u5b58\u4ec0\u4e48\u6570\u636e\uff0c\u5b83\u5c31\u80fd\u6309\u8fd9\u4e2a\u63a5\u53e3\u6539\u5199\u7f51\u9875\u3002",
-  path: "\u4f5c\u54c1\u5730\u5740\uff1a",
-  publicRead: "\u5141\u8bb8\u516c\u5f00\u8bfb\u53d6",
-  publicWrite: "\u5141\u8bb8\u516c\u5f00\u5199\u5165",
-  fieldRequired: "\u5fc5\u586b",
-  fieldList: "\u591a\u503c",
-  fieldRef: "\u5173\u8054",
-  idle: "\u53ef\u4ee5\u5f00\u59cb\u7ba1\u7406\u8fd9\u4e2a\u4f5c\u54c1\u7684\u4e92\u52a8\u529f\u80fd\u3002",
-  loadFail: "\u8bfb\u53d6\u4e92\u52a8\u529f\u80fd\u5931\u8d25",
-  typeLabel: "\u7c7b\u578b\uff1a",
-  advancedTitle: "\u9ad8\u7ea7\u6570\u636e\u8868\u7ba1\u7406",
-  advancedHelp: "\u9ad8\u7ea7\u7528\u6237\u53ef\u4ee5\u5728\u8fd9\u91cc\u65b0\u5efa\u3001\u7f16\u8f91\u6216\u5220\u9664\u6570\u636e\u8868\u3002\u5220\u9664\u6570\u636e\u8868\u4f1a\u540c\u65f6\u5220\u9664\u5176\u4e2d\u7684\u8bb0\u5f55\uff0c\u8bf7\u8c28\u614e\u64cd\u4f5c\u3002",
-  createCollection: "\u65b0\u5efa\u6570\u636e\u8868",
-  saveCollection: "\u4fdd\u5b58\u6570\u636e\u8868",
-  deleteCollection: "\u5220\u9664\u6570\u636e\u8868",
-  configJson: "\u6570\u636e\u8868 JSON \u914d\u7f6e",
-  createTemplate: "\u65b0\u5efa\u6570\u636e\u8868 JSON",
-  createDone: "\u6570\u636e\u8868\u5df2\u521b\u5efa\u3002",
-  saveDone: "\u6570\u636e\u8868\u5df2\u4fdd\u5b58\u3002",
-  deleteDone: "\u6570\u636e\u8868\u5df2\u5220\u9664\u3002",
-  invalidJson: "JSON \u683c\u5f0f\u4e0d\u6b63\u786e\u3002",
-  confirmDeletePrefix: "\u786e\u5b9a\u8981\u5220\u9664\u6570\u636e\u8868",
-  confirmDeleteSuffix: "\u5417\uff1f\u8fd9\u4f1a\u540c\u65f6\u5220\u9664\u8be5\u8868\u91cc\u7684\u6240\u6709\u8bb0\u5f55\u3002"
+    "把下面生成的 API 文档复制给 AI，再告诉它你想做什么页面、要存什么数据，它就能按这个接口改写网页。",
+  path: "作品地址：",
+  publicRead: "允许公开读取",
+  publicWrite: "允许公开写入",
+  fieldRequired: "必填",
+  fieldList: "多值",
+  fieldRef: "关联",
+  idle: "可以开始管理这个作品的互动功能。",
+  loadFail: "读取互动功能失败",
+  typeLabel: "类型：",
+  advancedTitle: "高级数据表管理",
+  advancedHelp: "高级用户可以在这里新建、编辑或删除数据表。删除数据表会同时删除其中的记录，请谨慎操作。",
+  createCollection: "新建数据表",
+  saveCollection: "保存数据表",
+  deleteCollection: "删除数据表",
+  configJson: "数据表 JSON 配置",
+  createTemplate: "新建数据表 JSON",
+  createDone: "数据表已创建。",
+  saveDone: "数据表已保存。",
+  deleteDone: "数据表已删除。",
+  invalidJson: "JSON 格式不正确。",
+  confirmDeletePrefix: "确定要删除数据表",
+  confirmDeleteSuffix: "吗？这会同时删除该表里的所有记录。"
 };
 
 function formatPermissions(permissions: PermissionSet): string[] {
@@ -190,7 +190,7 @@ export function InteractiveWorkspace({ projectId }: { projectId: string }) {
     try {
       const input = JSON.parse(newCollectionDraft) as CollectionInput;
       if (!input.name || !input.name.trim()) {
-        setStatusText("\u6570\u636e\u8868\u540d\u5b57\u4e0d\u80fd\u4e3a\u7a7a\u3002");
+        setStatusText("数据表名字不能为空。");
         return;
       }
       await postJSON<Collection>(`/api/v1/projects/${projectId}/collections`, input);

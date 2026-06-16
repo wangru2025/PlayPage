@@ -23,60 +23,60 @@ type RepairRequest = {
 };
 
 const text = {
-  title: "\u7f51\u9875\u4fee\u590d\u7533\u8bf7",
-  loading: "\u6b63\u5728\u52a0\u8f7d\u4fee\u590d\u7533\u8bf7\u2026\u2026",
-  empty: "\u5f53\u524d\u6ca1\u6709\u9700\u8981\u5904\u7406\u7684\u4fee\u590d\u7533\u8bf7\u3002",
-  loadFail: "\u4fee\u590d\u7533\u8bf7\u52a0\u8f7d\u5931\u8d25\u3002",
-  saving: "\u6b63\u5728\u4fdd\u5b58\u5904\u7406\u7ed3\u679c\u2026\u2026",
-  saveFail: "\u5904\u7406\u7ed3\u679c\u4fdd\u5b58\u5931\u8d25\u3002",
-  saveOk: "\u5904\u7406\u7ed3\u679c\u5df2\u7ecf\u4fdd\u5b58\u3002",
-  user: "\u7528\u6237",
-  project: "\u4f5c\u54c1",
-  issue: "\u95ee\u9898\u7c7b\u578b",
-  expected: "\u671f\u671b\u6548\u679c",
-  description: "\u95ee\u9898\u63cf\u8ff0",
-  allow: "\u5141\u8bb8\u7ba1\u7406\u5458\u4fee\u6539",
-  noAllow: "\u672a\u5141\u8bb8\u7ba1\u7406\u5458\u4fee\u6539",
-  noExpected: "\u672a\u586b\u5199",
-  userReply: "\u7528\u6237\u8865\u5145\u4fe1\u606f",
-  noUserReply: "\u7528\u6237\u6682\u672a\u8865\u5145\u3002",
-  adminReply: "\u7ba1\u7406\u5458\u56de\u590d",
-  noAdminReply: "\u6682\u65e0\u56de\u590d",
-  replyPrompt: "\u8bf7\u8f93\u5165\u7ed9\u7528\u6237\u7684\u56de\u590d\u3002",
-  process: "\u6807\u8bb0\u5904\u7406\u4e2d",
-  needInfo: "\u9700\u8981\u7528\u6237\u8865\u5145\u4fe1\u606f",
-  fixed: "\u6807\u8bb0\u5df2\u4fee\u590d",
-  reject: "\u6807\u8bb0\u65e0\u6cd5\u5904\u7406",
-  close: "\u5173\u95ed\u7533\u8bf7",
-  openProject: "\u6253\u5f00\u4f5c\u54c1",
-  showFinished: "\u663e\u793a\u5df2\u5b8c\u6210\u7533\u8bf7",
-  hideFinished: "\u9690\u85cf\u5df2\u5b8c\u6210\u7533\u8bf7",
-  status: "\u72b6\u6001",
-  actions: "\u64cd\u4f5c",
-  tableRegion: "\u7f51\u9875\u4fee\u590d\u7533\u8bf7\u8868\u683c"
+  title: "网页修复申请",
+  loading: "正在加载修复申请……",
+  empty: "当前没有需要处理的修复申请。",
+  loadFail: "修复申请加载失败。",
+  saving: "正在保存处理结果……",
+  saveFail: "处理结果保存失败。",
+  saveOk: "处理结果已经保存。",
+  user: "用户",
+  project: "作品",
+  issue: "问题类型",
+  expected: "期望效果",
+  description: "问题描述",
+  allow: "允许管理员修改",
+  noAllow: "未允许管理员修改",
+  noExpected: "未填写",
+  userReply: "用户补充信息",
+  noUserReply: "用户暂未补充。",
+  adminReply: "管理员回复",
+  noAdminReply: "暂无回复",
+  replyPrompt: "请输入给用户的回复。",
+  process: "标记处理中",
+  needInfo: "需要用户补充信息",
+  fixed: "标记已修复",
+  reject: "标记无法处理",
+  close: "关闭申请",
+  openProject: "打开作品",
+  showFinished: "显示已完成申请",
+  hideFinished: "隐藏已完成申请",
+  status: "状态",
+  actions: "操作",
+  tableRegion: "网页修复申请表格"
 };
 
 const issueLabels: Record<string, string> = {
-  page_broken: "\u9875\u9762\u6253\u4e0d\u5f00\u6216\u663e\u793a\u5f02\u5e38",
-  button_broken: "\u6309\u94ae\u4e0d\u80fd\u7528",
-  interactive_error: "\u4e92\u52a8\u529f\u80fd\u51fa\u9519",
-  data_error: "\u6570\u636e\u4fdd\u5b58\u6216\u8bfb\u53d6\u5f02\u5e38",
-  encoding_error: "\u4e71\u7801\u95ee\u9898",
-  style_error: "\u6837\u5f0f\u95ee\u9898",
-  ai_code_error: "AI \u751f\u6210\u7684\u4ee3\u7801\u8dd1\u4e0d\u901a",
-  other: "\u5176\u4ed6\u95ee\u9898"
+  page_broken: "页面打不开或显示异常",
+  button_broken: "按钮不能用",
+  interactive_error: "互动功能出错",
+  data_error: "数据保存或读取异常",
+  encoding_error: "乱码问题",
+  style_error: "样式问题",
+  ai_code_error: "AI 生成的代码跑不通",
+  other: "其他问题"
 };
 
 const cellStyle = { borderBottom: "1px solid var(--line)", padding: "10px 12px", textAlign: "left" as const, verticalAlign: "top" as const };
 
 function statusLabel(status: string): string {
   switch (status) {
-    case "pending": return "\u5f85\u5904\u7406";
-    case "processing": return "\u5904\u7406\u4e2d";
-    case "need_info": return "\u7b49\u5f85\u7528\u6237\u8865\u5145";
-    case "fixed": return "\u5df2\u4fee\u590d";
-    case "rejected": return "\u65e0\u6cd5\u5904\u7406";
-    case "closed": return "\u5df2\u5173\u95ed";
+    case "pending": return "待处理";
+    case "processing": return "处理中";
+    case "need_info": return "等待用户补充";
+    case "fixed": return "已修复";
+    case "rejected": return "无法处理";
+    case "closed": return "已关闭";
     default: return status;
   }
 }
@@ -127,7 +127,7 @@ export function AdminRepairRequests() {
         <h2 id="admin-repairs-title" style={{ margin: 0 }}>{text.title}</h2>
         <button className="button-secondary" type="button" onClick={() => setShowFinished((value) => !value)}>{showFinished ? text.hideFinished : text.showFinished}</button>
       </div>
-      <div className="status" aria-live="polite">{statusText || `\u5f53\u524d\u663e\u793a ${visibleItems.length} \u6761\u4fee\u590d\u7533\u8bf7\u3002`}</div>
+      <div className="status" aria-live="polite">{statusText || `当前显示 ${visibleItems.length} 条修复申请。`}</div>
       {visibleItems.length === 0 ? <p style={{ margin: 0, color: "var(--muted)" }}>{text.empty}</p> : null}
       <div style={{ overflowX: "auto" }} role="region" aria-label={text.tableRegion}>
         <table style={{ width: "100%", minWidth: 980, borderCollapse: "collapse" }}>

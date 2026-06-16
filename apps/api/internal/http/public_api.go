@@ -178,7 +178,7 @@ func (rt *Router) handlePublicDeleteCollection(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	writeJSON(w, http.StatusForbidden, map[string]string{"error": "\u516c\u5f00\u63a5\u53e3\u4e0d\u5141\u8bb8\u5220\u9664\u4f5c\u54c1\u6570\u636e\u8868\u3002"})
+	writeJSON(w, http.StatusForbidden, map[string]string{"error": "公开接口不允许删除作品数据表。"})
 }
 
 func (rt *Router) handlePublicListRecords(w http.ResponseWriter, r *http.Request, projectID, collectionName string) {
@@ -191,7 +191,7 @@ func (rt *Router) handlePublicListRecords(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !collection.Permissions.PublicRead {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "\u8fd9\u4e2a\u4f5c\u54c1\u6570\u636e\u8868\u4e0d\u5141\u8bb8\u516c\u5f00\u8bfb\u53d6"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "这个作品数据表不允许公开读取"})
 		return
 	}
 
@@ -200,6 +200,12 @@ func (rt *Router) handlePublicListRecords(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取记录失败"})
 		return
 	}
+	query, err := parseRecordQuery(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	items = applyRecordQuery(items, query)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"projectId":      access.Project.ID,
@@ -219,7 +225,7 @@ func (rt *Router) handlePublicCreateRecord(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if !collection.Permissions.PublicWrite {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "\u8fd9\u4e2a\u4f5c\u54c1\u6570\u636e\u8868\u4e0d\u5141\u8bb8\u516c\u5f00\u5199\u5165"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "这个作品数据表不允许公开写入"})
 		return
 	}
 
@@ -253,7 +259,7 @@ func (rt *Router) handlePublicGetRecord(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if !collection.Permissions.PublicRead {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "\u8fd9\u4e2a\u4f5c\u54c1\u6570\u636e\u8868\u4e0d\u5141\u8bb8\u516c\u5f00\u8bfb\u53d6"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "这个作品数据表不允许公开读取"})
 		return
 	}
 
@@ -281,7 +287,7 @@ func (rt *Router) handlePublicUpdateRecord(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if !collection.Permissions.PublicWrite {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "\u8fd9\u4e2a\u4f5c\u54c1\u6570\u636e\u8868\u4e0d\u5141\u8bb8\u516c\u5f00\u5199\u5165"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "这个作品数据表不允许公开写入"})
 		return
 	}
 
@@ -319,7 +325,7 @@ func (rt *Router) handlePublicDeleteRecord(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if !collection.Permissions.PublicWrite {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "\u8fd9\u4e2a\u4f5c\u54c1\u6570\u636e\u8868\u4e0d\u5141\u8bb8\u516c\u5f00\u5199\u5165"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "这个作品数据表不允许公开写入"})
 		return
 	}
 

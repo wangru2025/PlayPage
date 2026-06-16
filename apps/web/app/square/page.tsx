@@ -16,13 +16,13 @@ type SquareResponse = {
 };
 
 const text = {
-  eyebrow: "\u4f5c\u54c1\u5e7f\u573a",
-  title: "\u770b\u770b\u522b\u4eba\u505a\u4e86\u4ec0\u4e48",
+  eyebrow: "作品广场",
+  title: "看看别人做了什么",
   intro:
-    "\u8fd9\u91cc\u53ea\u5c55\u793a\u4f5c\u8005\u4e3b\u52a8\u516c\u5f00\u7684\u4f5c\u54c1\u3002\u4f60\u53ef\u4ee5\u5148\u53bb\u901b\u901b\uff0c\u518d\u56de\u5230\u81ea\u5df1\u7684\u4f5c\u54c1\u5217\u8868\u7ee7\u7eed\u5236\u4f5c\u3002",
-  start: "\u6211\u4e5f\u8981\u505a\u4e00\u4e2a",
-  empty: "\u8fd8\u6ca1\u6709\u516c\u5f00\u4f5c\u54c1\u3002\u7b49\u7b2c\u4e00\u6279\u5185\u6d4b\u7528\u6237\u516c\u5f00\u4e4b\u540e\uff0c\u8fd9\u91cc\u5c31\u4f1a\u70ed\u95f9\u8d77\u6765\u3002",
-  author: "\u4f5c\u8005\uff1a@"
+    "这里只展示作者主动公开的作品。你可以先去逛逛，再回到自己的作品列表继续制作。",
+  start: "我也要做一个",
+  empty: "还没有公开作品。等第一批内测用户公开之后，这里就会热闹起来。",
+  author: "作者：@"
 };
 
 export default async function SquarePage() {
@@ -66,7 +66,7 @@ export default async function SquarePage() {
               </div>
               <div>
                 <a className="button-secondary" href={project.publicUrl} target="_blank" rel="noreferrer">
-                  {"\u6253\u5f00\u4f5c\u54c1"}
+                  {"打开作品"}
                 </a>
               </div>
             </article>

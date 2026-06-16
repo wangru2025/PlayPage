@@ -706,7 +706,7 @@ func (s *PostgresStore) CreateRecord(ctx context.Context, projectID, collectionN
 		return domain.Record{}, err
 	}
 	if !ok {
-		return domain.Record{}, fmt.Errorf("\u627e\u4e0d\u5230\u8fd9\u4e2a\u96c6\u5408")
+		return domain.Record{}, fmt.Errorf("找不到这个集合")
 	}
 
 	raw, err := json.Marshal(input.Data)
