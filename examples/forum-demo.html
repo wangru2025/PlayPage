@@ -1,0 +1,1066 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的论坛</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f1e8;
+      --panel: #fffaf3;
+      --panel-strong: #fff;
+      --line: #dfcfba;
+      --text: #2b2118;
+      --muted: #6f6255;
+      --brand: #b85c38;
+      --brand-strong: #964325;
+      --accent: #f0c987;
+      --danger: #a12d2d;
+      --shadow: 0 18px 40px rgba(73, 46, 20, 0.12);
+      --radius: 20px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(240, 201, 135, 0.55), transparent 28%),
+        radial-gradient(circle at top right, rgba(184, 92, 56, 0.18), transparent 24%),
+        linear-gradient(180deg, #f8f3ea 0%, #f3eadf 100%);
+    }
+
+    a {
+      color: inherit;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button,
+    input,
+    textarea {
+      border-radius: 14px;
+      border: 1px solid var(--line);
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .page {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 18px;
+      padding: 28px;
+      border: 1px solid rgba(184, 92, 56, 0.14);
+      border-radius: 28px;
+      background:
+        linear-gradient(135deg, rgba(255, 250, 243, 0.96), rgba(255, 243, 227, 0.92)),
+        var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: start;
+      flex-wrap: wrap;
+    }
+
+    .hero h1,
+    .hero p,
+    .panel h2,
+    .panel h3,
+    .panel p,
+    .card h3,
+    .card p {
+      margin: 0;
+    }
+
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      line-height: 1.1;
+    }
+
+    .hero-subtitle {
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 720px;
+      line-height: 1.7;
+    }
+
+    .hero-badges {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(240, 201, 135, 0.28);
+      border: 1px solid rgba(184, 92, 56, 0.14);
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .panel {
+      display: grid;
+      gap: 16px;
+      padding: 22px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(184, 92, 56, 0.14);
+      background: rgba(255, 250, 243, 0.88);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    label {
+      font-weight: 700;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--panel-strong);
+      color: var(--text);
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .button-primary,
+    .button-secondary,
+    .button-danger {
+      min-height: 44px;
+      padding: 10px 16px;
+      font-weight: 700;
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+
+    .button-primary {
+      color: #fff;
+      background: linear-gradient(180deg, var(--brand), var(--brand-strong));
+      border-color: transparent;
+    }
+
+    .button-secondary {
+      background: rgba(255, 255, 255, 0.86);
+      color: var(--text);
+    }
+
+    .button-danger {
+      background: #fff2f2;
+      color: var(--danger);
+      border-color: rgba(161, 45, 45, 0.2);
+    }
+
+    .button-primary:hover,
+    .button-secondary:hover,
+    .button-danger:hover {
+      transform: translateY(-1px);
+    }
+
+    .status {
+      min-height: 24px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(240, 201, 135, 0.24);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .status[data-tone="error"] {
+      background: #fff1f1;
+      color: #872323;
+    }
+
+    .status[data-tone="success"] {
+      background: #eefaf1;
+      color: #1f6b37;
+    }
+
+    .helper {
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 0.95rem;
+    }
+
+    .post-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .card {
+      display: grid;
+      gap: 10px;
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(184, 92, 56, 0.12);
+      background: rgba(255, 255, 255, 0.82);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      flex-wrap: wrap;
+    }
+
+    .post-button {
+      width: 100%;
+      text-align: left;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: inherit;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .content {
+      white-space: pre-wrap;
+      line-height: 1.75;
+      word-break: break-word;
+    }
+
+    .empty {
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.52);
+    }
+
+    .detail-title {
+      font-size: clamp(1.4rem, 3vw, 2.1rem);
+      line-height: 1.25;
+    }
+
+    .comment-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .divider {
+      height: 1px;
+      background: rgba(184, 92, 56, 0.14);
+    }
+
+    .small {
+      font-size: 0.92rem;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page" id="main-content">
+    <section class="hero" aria-labelledby="page-title">
+      <div class="hero-top">
+        <div class="stack">
+          <h1 id="page-title">我的论坛</h1>
+          <p class="hero-subtitle">
+            这是一个能真实发帖、真实评论的在线论坛小作品。页面里的帖子、评论、用户资料都会写进平台提供的作品数据接口里。
+          </p>
+        </div>
+        <div class="hero-badges" aria-label="论坛信息">
+          <span class="badge">作品地址：<span id="project-url-text">载入中</span></span>
+          <span class="badge">当前状态：<span id="session-summary">还没有登录</span></span>
+        </div>
+      </div>
+      <div id="global-status" class="status" aria-live="polite">正在准备论坛……</div>
+    </section>
+
+    <section class="layout" aria-label="论坛主体">
+      <aside class="stack" aria-label="论坛操作区">
+        <section class="panel" aria-labelledby="auth-title">
+          <div class="panel-title">
+            <h2 id="auth-title">注册 / 登录</h2>
+          </div>
+          <p class="helper">
+            这个演示版论坛会把用户资料真实保存到线上。由于当前平台接口还没有给终端用户提供独立认证能力，所以这里用“昵称 + 口令”演示登录流程。
+          </p>
+          <div class="field">
+            <label for="nickname-input">昵称</label>
+            <input id="nickname-input" type="text" maxlength="24" autocomplete="nickname" placeholder="例如：小汪同学">
+          </div>
+          <div class="field">
+            <label for="code-input">登录口令</label>
+            <input id="code-input" type="password" maxlength="32" autocomplete="current-password" placeholder="自己记住就好">
+          </div>
+          <div class="field">
+            <label for="bio-input">个性签名</label>
+            <input id="bio-input" type="text" maxlength="80" placeholder="例如：喜欢写论坛和小游戏">
+          </div>
+          <div class="button-row">
+            <button class="button-primary" type="button" id="register-button">注册新用户</button>
+            <button class="button-secondary" type="button" id="login-button">登录</button>
+            <button class="button-secondary" type="button" id="logout-button">退出</button>
+          </div>
+          <div id="auth-status" class="status" aria-live="polite">还没有登录。</div>
+        </section>
+
+        <section class="panel" aria-labelledby="create-title">
+          <div class="panel-title">
+            <h2 id="create-title">发新帖子</h2>
+          </div>
+          <p class="helper">先登录，再发布新帖子。</p>
+          <div class="field">
+            <label for="post-title-input">帖子标题</label>
+            <input id="post-title-input" type="text" maxlength="60" placeholder="给帖子起个名字">
+          </div>
+          <div class="field">
+            <label for="post-content-input">帖子内容</label>
+            <textarea id="post-content-input" placeholder="把你想说的话写在这里"></textarea>
+          </div>
+          <div class="button-row">
+            <button class="button-primary" type="button" id="create-post-button">发布帖子</button>
+          </div>
+          <div id="post-status" class="status" aria-live="polite">还没有发布新帖子。</div>
+        </section>
+      </aside>
+
+      <section class="stack" aria-label="帖子和评论">
+        <section class="panel" aria-labelledby="list-title">
+          <div class="panel-title">
+            <h2 id="list-title">帖子广场</h2>
+            <button class="button-secondary small" type="button" id="refresh-button">刷新内容</button>
+          </div>
+          <div id="post-list" class="post-list" aria-live="polite"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="detail-title">
+          <div class="panel-title">
+            <h2 id="detail-title">帖子详情</h2>
+          </div>
+          <div id="post-detail" class="stack">
+            <div class="empty">先从上面的帖子列表里点开一篇帖子。</div>
+          </div>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const config = {
+      projectId: "ca4da6d3-7b0a-4022-b2fe-6eb8ae39c37f",
+      projectKey: "1400ef9096f8a6f84efff9268a844ded3d8be221ff4a58a5",
+      apiBase: "/api/v1/public/projects/ca4da6d3-7b0a-4022-b2fe-6eb8ae39c37f",
+      collections: {
+        users: "forum_users",
+        posts: "forum_posts",
+        comments: "forum_comments"
+      }
+    };
+
+    const state = {
+      project: null,
+      currentUser: null,
+      posts: [],
+      comments: [],
+      selectedPostId: ""
+    };
+
+    const elements = {
+      globalStatus: document.getElementById("global-status"),
+      authStatus: document.getElementById("auth-status"),
+      postStatus: document.getElementById("post-status"),
+      projectUrlText: document.getElementById("project-url-text"),
+      sessionSummary: document.getElementById("session-summary"),
+      nicknameInput: document.getElementById("nickname-input"),
+      codeInput: document.getElementById("code-input"),
+      bioInput: document.getElementById("bio-input"),
+      registerButton: document.getElementById("register-button"),
+      loginButton: document.getElementById("login-button"),
+      logoutButton: document.getElementById("logout-button"),
+      postTitleInput: document.getElementById("post-title-input"),
+      postContentInput: document.getElementById("post-content-input"),
+      createPostButton: document.getElementById("create-post-button"),
+      refreshButton: document.getElementById("refresh-button"),
+      postList: document.getElementById("post-list"),
+      postDetail: document.getElementById("post-detail")
+    };
+
+    function apiHeaders() {
+      return {
+        "Content-Type": "application/json",
+        "X-Project-Key": config.projectKey
+      };
+    }
+
+    async function request(path, options = {}) {
+      const response = await fetch(config.apiBase + path, {
+        method: options.method || "GET",
+        headers: options.body ? apiHeaders() : { "X-Project-Key": config.projectKey },
+        body: options.body ? JSON.stringify(options.body) : undefined
+      });
+
+      const text = await response.text();
+      let payload = null;
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch (error) {
+          payload = null;
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(payload && payload.error ? payload.error : "请求失败：" + response.status);
+      }
+
+      return payload;
+    }
+
+    async function ensureCollection(name, fields) {
+      try {
+        await request("/collections", {
+          method: "POST",
+          body: {
+            name,
+            permissions: {
+              publicRead: true,
+              authWrite: true,
+              ownerWrite: true,
+              ownerDelete: true
+            },
+            fields
+          }
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes("duplicate") && !message.includes("唯一") && !message.includes("已经") && !message.includes("exists")) {
+          console.warn("创建数据表失败：", name, message);
+        }
+      }
+    }
+
+    async function ensureCollections() {
+      await ensureCollection(config.collections.users, [
+        { name: "nickname", type: "string", required: true, isList: false },
+        { name: "accessCode", type: "string", required: true, isList: false },
+        { name: "bio", type: "text", required: false, isList: false },
+        { name: "createdAt", type: "datetime", required: true, isList: false }
+      ]);
+
+      await ensureCollection(config.collections.posts, [
+        { name: "title", type: "string", required: true, isList: false },
+        { name: "content", type: "text", required: true, isList: false },
+        { name: "authorId", type: "string", required: true, isList: false },
+        { name: "authorName", type: "string", required: true, isList: false },
+        { name: "createdAt", type: "datetime", required: true, isList: false }
+      ]);
+
+      await ensureCollection(config.collections.comments, [
+        { name: "postId", type: "string", required: true, isList: false },
+        { name: "content", type: "text", required: true, isList: false },
+        { name: "authorId", type: "string", required: true, isList: false },
+        { name: "authorName", type: "string", required: true, isList: false },
+        { name: "createdAt", type: "datetime", required: true, isList: false }
+      ]);
+    }
+
+    function setStatus(target, message, tone) {
+      target.textContent = message;
+      target.dataset.tone = tone || "";
+    }
+
+    function escapeTrimmed(value) {
+      return value.trim();
+    }
+
+    function formatTime(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+      return date.toLocaleString("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function syncSessionSummary() {
+      if (state.currentUser) {
+        elements.sessionSummary.textContent = state.currentUser.data.nickname;
+      } else {
+        elements.sessionSummary.textContent = "还没有登录";
+      }
+    }
+
+    async function loadProjectInfo() {
+      const payload = await request("");
+      state.project = payload.project || null;
+      elements.projectUrlText.textContent = state.project ? state.project.publicUrl : "读取失败";
+    }
+
+    async function listRecords(collectionName) {
+      const payload = await request("/collections/" + encodeURIComponent(collectionName) + "/records");
+      return Array.isArray(payload.items) ? payload.items : [];
+    }
+
+    async function refreshForum() {
+      const [posts, comments] = await Promise.all([
+        listRecords(config.collections.posts),
+        listRecords(config.collections.comments)
+      ]);
+      state.posts = posts;
+      state.comments = comments;
+
+      if (!state.selectedPostId && state.posts.length > 0) {
+        state.selectedPostId = state.posts[0].id;
+      }
+      if (state.selectedPostId && !state.posts.some((post) => post.id === state.selectedPostId)) {
+        state.selectedPostId = state.posts.length > 0 ? state.posts[0].id : "";
+      }
+
+      renderPostList();
+      renderPostDetail();
+    }
+
+    function renderPostList() {
+      elements.postList.innerHTML = "";
+
+      if (state.posts.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "现在还没有帖子。先登录，然后发出第一篇帖子吧。";
+        elements.postList.appendChild(empty);
+        return;
+      }
+
+      for (const post of state.posts) {
+        const commentCount = state.comments.filter((comment) => comment.data.postId === post.id).length;
+        const article = document.createElement("article");
+        article.className = "card";
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "post-button";
+        button.setAttribute("aria-pressed", String(state.selectedPostId === post.id));
+        button.addEventListener("click", () => {
+          state.selectedPostId = post.id;
+          renderPostList();
+          renderPostDetail();
+        });
+
+        const header = document.createElement("div");
+        header.className = "card-header";
+
+        const titleBlock = document.createElement("div");
+        titleBlock.className = "stack";
+
+        const title = document.createElement("h3");
+        title.textContent = post.data.title || "没有标题";
+
+        const meta = document.createElement("p");
+        meta.className = "meta";
+        meta.textContent =
+          "作者：" + (post.data.authorName || "匿名") +
+          " · " + formatTime(post.data.createdAt || post.createdAt) +
+          " · 评论 " + commentCount + " 条";
+
+        titleBlock.appendChild(title);
+        titleBlock.appendChild(meta);
+        header.appendChild(titleBlock);
+
+        const preview = document.createElement("p");
+        preview.className = "content";
+        preview.textContent = String(post.data.content || "").slice(0, 120) + (String(post.data.content || "").length > 120 ? "……" : "");
+
+        button.appendChild(header);
+        button.appendChild(preview);
+        article.appendChild(button);
+        elements.postList.appendChild(article);
+      }
+    }
+
+    function renderPostDetail() {
+      elements.postDetail.innerHTML = "";
+
+      const post = state.posts.find((item) => item.id === state.selectedPostId);
+      if (!post) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "先从上面的帖子列表里点开一篇帖子。";
+        elements.postDetail.appendChild(empty);
+        return;
+      }
+
+      const postCard = document.createElement("article");
+      postCard.className = "card";
+
+      const title = document.createElement("h3");
+      title.className = "detail-title";
+      title.textContent = post.data.title || "没有标题";
+
+      const meta = document.createElement("p");
+      meta.className = "meta";
+      meta.textContent =
+        "作者：" + (post.data.authorName || "匿名") +
+        " · 发布时间：" + formatTime(post.data.createdAt || post.createdAt);
+
+      const content = document.createElement("div");
+      content.className = "content";
+      content.textContent = post.data.content || "";
+
+      postCard.appendChild(title);
+      postCard.appendChild(meta);
+      postCard.appendChild(content);
+
+      if (canManageRecord(post)) {
+        const buttonRow = document.createElement("div");
+        buttonRow.className = "button-row";
+
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.className = "button-danger";
+        deleteButton.textContent = "删除这篇帖子";
+        deleteButton.addEventListener("click", async () => {
+          const ok = window.confirm("确定要删除这篇帖子吗？对应评论会保留在数据里，适合测试，不适合正式论坛。");
+          if (!ok) {
+            return;
+          }
+          try {
+            setStatus(elements.globalStatus, "正在删除帖子……", "");
+            await request("/collections/" + encodeURIComponent(config.collections.posts) + "/records/" + encodeURIComponent(post.id), {
+              method: "DELETE"
+            });
+            if (state.selectedPostId === post.id) {
+              state.selectedPostId = "";
+            }
+            await refreshForum();
+            setStatus(elements.globalStatus, "帖子已经删除。", "success");
+          } catch (error) {
+            setStatus(elements.globalStatus, error instanceof Error ? error.message : "删除帖子失败。", "error");
+          }
+        });
+
+        buttonRow.appendChild(deleteButton);
+        postCard.appendChild(buttonRow);
+      }
+
+      elements.postDetail.appendChild(postCard);
+
+      const divider = document.createElement("div");
+      divider.className = "divider";
+      elements.postDetail.appendChild(divider);
+
+      const commentPanel = document.createElement("section");
+      commentPanel.className = "stack";
+      commentPanel.setAttribute("aria-labelledby", "comment-title");
+
+      const commentTitle = document.createElement("h3");
+      commentTitle.id = "comment-title";
+      commentTitle.textContent = "评论区";
+      commentPanel.appendChild(commentTitle);
+
+      const commentList = document.createElement("div");
+      commentList.className = "comment-list";
+
+      const comments = state.comments
+        .filter((item) => item.data.postId === post.id)
+        .sort((a, b) => {
+          const aTime = new Date(a.data.createdAt || a.createdAt).getTime();
+          const bTime = new Date(b.data.createdAt || b.createdAt).getTime();
+          return aTime - bTime;
+        });
+
+      if (comments.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "现在还没有评论。来写第一条吧。";
+        commentList.appendChild(empty);
+      } else {
+        for (const comment of comments) {
+          const item = document.createElement("article");
+          item.className = "card";
+
+          const header = document.createElement("div");
+          header.className = "card-header";
+
+          const author = document.createElement("strong");
+          author.textContent = comment.data.authorName || "匿名";
+
+          const time = document.createElement("span");
+          time.className = "meta";
+          time.textContent = formatTime(comment.data.createdAt || comment.createdAt);
+
+          header.appendChild(author);
+          header.appendChild(time);
+
+          const body = document.createElement("div");
+          body.className = "content";
+          body.textContent = comment.data.content || "";
+
+          item.appendChild(header);
+          item.appendChild(body);
+
+          if (canManageRecord(comment)) {
+            const row = document.createElement("div");
+            row.className = "button-row";
+
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "button-danger small";
+            deleteButton.textContent = "删除评论";
+            deleteButton.addEventListener("click", async () => {
+              const ok = window.confirm("确定要删除这条评论吗？");
+              if (!ok) {
+                return;
+              }
+              try {
+                setStatus(elements.globalStatus, "正在删除评论……", "");
+                await request("/collections/" + encodeURIComponent(config.collections.comments) + "/records/" + encodeURIComponent(comment.id), {
+                  method: "DELETE"
+                });
+                await refreshForum();
+                setStatus(elements.globalStatus, "评论已经删除。", "success");
+              } catch (error) {
+                setStatus(elements.globalStatus, error instanceof Error ? error.message : "删除评论失败。", "error");
+              }
+            });
+
+            row.appendChild(deleteButton);
+            item.appendChild(row);
+          }
+
+          commentList.appendChild(item);
+        }
+      }
+
+      commentPanel.appendChild(commentList);
+      commentPanel.appendChild(buildCommentComposer(post.id));
+      elements.postDetail.appendChild(commentPanel);
+    }
+
+    function buildCommentComposer(postId) {
+      const wrapper = document.createElement("section");
+      wrapper.className = "panel";
+      wrapper.setAttribute("aria-label", "发表评论");
+
+      const heading = document.createElement("h3");
+      heading.textContent = "写评论";
+      wrapper.appendChild(heading);
+
+      const helper = document.createElement("p");
+      helper.className = "helper";
+      helper.textContent = state.currentUser ? "你现在可以评论这篇帖子。" : "先登录，再发表评论。";
+      wrapper.appendChild(helper);
+
+      const field = document.createElement("div");
+      field.className = "field";
+
+      const label = document.createElement("label");
+      label.textContent = "评论内容";
+      label.htmlFor = "comment-input";
+
+      const textarea = document.createElement("textarea");
+      textarea.id = "comment-input";
+      textarea.placeholder = "写下你的想法";
+
+      field.appendChild(label);
+      field.appendChild(textarea);
+      wrapper.appendChild(field);
+
+      const buttonRow = document.createElement("div");
+      buttonRow.className = "button-row";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button-primary";
+      button.textContent = "发布评论";
+      button.disabled = !state.currentUser;
+      button.addEventListener("click", async () => {
+        const content = escapeTrimmed(textarea.value);
+        if (!state.currentUser) {
+          setStatus(elements.globalStatus, "请先登录，再发表评论。", "error");
+          return;
+        }
+        if (!content) {
+          setStatus(elements.globalStatus, "评论内容不能为空。", "error");
+          return;
+        }
+
+        try {
+          setStatus(elements.globalStatus, "正在发布评论……", "");
+          await request("/collections/" + encodeURIComponent(config.collections.comments) + "/records", {
+            method: "POST",
+            body: {
+              data: {
+                postId,
+                content,
+                authorId: state.currentUser.id,
+                authorName: state.currentUser.data.nickname,
+                createdAt: new Date().toISOString()
+              }
+            }
+          });
+          textarea.value = "";
+          await refreshForum();
+          setStatus(elements.globalStatus, "评论已经发布。", "success");
+        } catch (error) {
+          setStatus(elements.globalStatus, error instanceof Error ? error.message : "发布评论失败。", "error");
+        }
+      });
+
+      buttonRow.appendChild(button);
+      wrapper.appendChild(buttonRow);
+      return wrapper;
+    }
+
+    function canManageRecord(record) {
+      return Boolean(
+        state.currentUser &&
+        record &&
+        record.data &&
+        record.data.authorId &&
+        record.data.authorId === state.currentUser.id
+      );
+    }
+
+    async function registerUser() {
+      const nickname = escapeTrimmed(elements.nicknameInput.value);
+      const accessCode = escapeTrimmed(elements.codeInput.value);
+      const bio = escapeTrimmed(elements.bioInput.value);
+
+      if (!nickname) {
+        setStatus(elements.authStatus, "请先填写昵称。", "error");
+        return;
+      }
+      if (!accessCode) {
+        setStatus(elements.authStatus, "请先填写登录口令。", "error");
+        return;
+      }
+
+      try {
+        setStatus(elements.authStatus, "正在检查昵称……", "");
+        const users = await listRecords(config.collections.users);
+        const duplicate = users.find((item) => String(item.data.nickname || "").trim() === nickname);
+        if (duplicate) {
+          setStatus(elements.authStatus, "这个昵称已经有人用了，请换一个。", "error");
+          return;
+        }
+
+        setStatus(elements.authStatus, "正在创建新用户……", "");
+        const payload = await request("/collections/" + encodeURIComponent(config.collections.users) + "/records", {
+          method: "POST",
+          body: {
+            data: {
+              nickname,
+              accessCode,
+              bio,
+              createdAt: new Date().toISOString()
+            }
+          }
+        });
+
+        state.currentUser = payload;
+        syncSessionSummary();
+        setStatus(elements.authStatus, "注册成功，已经自动登录。", "success");
+        setStatus(elements.globalStatus, "欢迎来到论坛，" + nickname + "。", "success");
+        renderPostDetail();
+      } catch (error) {
+        setStatus(elements.authStatus, error instanceof Error ? error.message : "注册失败。", "error");
+      }
+    }
+
+    async function loginUser() {
+      const nickname = escapeTrimmed(elements.nicknameInput.value);
+      const accessCode = escapeTrimmed(elements.codeInput.value);
+
+      if (!nickname || !accessCode) {
+        setStatus(elements.authStatus, "请输入昵称和登录口令。", "error");
+        return;
+      }
+
+      try {
+        setStatus(elements.authStatus, "正在登录……", "");
+        const users = await listRecords(config.collections.users);
+        const matched = users.find((item) => (
+          String(item.data.nickname || "").trim() === nickname &&
+          String(item.data.accessCode || "") === accessCode
+        ));
+
+        if (!matched) {
+          setStatus(elements.authStatus, "没有找到匹配的昵称和口令。", "error");
+          return;
+        }
+
+        state.currentUser = matched;
+        syncSessionSummary();
+        setStatus(elements.authStatus, "登录成功。", "success");
+        setStatus(elements.globalStatus, "欢迎回来，" + nickname + "。", "success");
+        renderPostDetail();
+      } catch (error) {
+        setStatus(elements.authStatus, error instanceof Error ? error.message : "登录失败。", "error");
+      }
+    }
+
+    function logoutUser() {
+      if (!state.currentUser) {
+        setStatus(elements.authStatus, "你现在本来就没有登录。", "error");
+        return;
+      }
+      const nickname = state.currentUser.data.nickname || "这位同学";
+      state.currentUser = null;
+      syncSessionSummary();
+      setStatus(elements.authStatus, "已经退出登录。", "success");
+      setStatus(elements.globalStatus, nickname + " 已经退出。", "success");
+      renderPostDetail();
+    }
+
+    async function createPost() {
+      const title = escapeTrimmed(elements.postTitleInput.value);
+      const content = escapeTrimmed(elements.postContentInput.value);
+
+      if (!state.currentUser) {
+        setStatus(elements.postStatus, "请先登录，再发帖。", "error");
+        return;
+      }
+      if (!title) {
+        setStatus(elements.postStatus, "帖子标题不能为空。", "error");
+        return;
+      }
+      if (!content) {
+        setStatus(elements.postStatus, "帖子内容不能为空。", "error");
+        return;
+      }
+
+      try {
+        setStatus(elements.postStatus, "正在发布帖子……", "");
+        const payload = await request("/collections/" + encodeURIComponent(config.collections.posts) + "/records", {
+          method: "POST",
+          body: {
+            data: {
+              title,
+              content,
+              authorId: state.currentUser.id,
+              authorName: state.currentUser.data.nickname,
+              createdAt: new Date().toISOString()
+            }
+          }
+        });
+
+        elements.postTitleInput.value = "";
+        elements.postContentInput.value = "";
+        state.selectedPostId = payload.id;
+        await refreshForum();
+        setStatus(elements.postStatus, "帖子已经发布。", "success");
+        setStatus(elements.globalStatus, "新帖子发布成功。", "success");
+      } catch (error) {
+        setStatus(elements.postStatus, error instanceof Error ? error.message : "发帖失败。", "error");
+      }
+    }
+
+    async function boot() {
+      elements.registerButton.addEventListener("click", registerUser);
+      elements.loginButton.addEventListener("click", loginUser);
+      elements.logoutButton.addEventListener("click", logoutUser);
+      elements.createPostButton.addEventListener("click", createPost);
+      elements.refreshButton.addEventListener("click", async () => {
+        try {
+          setStatus(elements.globalStatus, "正在刷新论坛内容……", "");
+          await refreshForum();
+          setStatus(elements.globalStatus, "已经刷新到最新内容。", "success");
+        } catch (error) {
+          setStatus(elements.globalStatus, error instanceof Error ? error.message : "刷新失败。", "error");
+        }
+      });
+
+      try {
+        await loadProjectInfo();
+        await ensureCollections();
+        await refreshForum();
+        syncSessionSummary();
+        setStatus(elements.globalStatus, "论坛已经准备好，可以开始测试了。", "success");
+      } catch (error) {
+        setStatus(elements.globalStatus, error instanceof Error ? error.message : "论坛初始化失败。", "error");
+      }
+    }
+
+    boot();
+  </script>
+</body>
+</html>

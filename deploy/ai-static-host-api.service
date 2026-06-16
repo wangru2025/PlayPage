@@ -1,0 +1,23 @@
+[Unit]
+Description=AI Static Host API
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=ai-static-host
+Group=ai-static-host
+WorkingDirectory=/opt/ai-static-host
+EnvironmentFile=/opt/ai-static-host/config/api.env
+ExecStart=/opt/ai-static-host/bin/ai-static-host-api
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+StandardOutput=append:/var/log/ai-static-host/api.log
+StandardError=append:/var/log/ai-static-host/api.error.log
+
+[Install]
+WantedBy=multi-user.target

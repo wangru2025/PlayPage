@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<!-- saved from url=(0097)https://web.wangru.net/@%E6%B0%B8%E6%81%92%E4%B9%8B%E6%B5%B7/%E6%B0%B8%E6%81%92%E8%AE%BA%E5%9D%9B -->
+<html lang="zh-CN"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>永恒乐园 - 语音社交</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial,sans-serif}
+body{background:#f5f5f5;color:#333;padding-bottom:70px}
+.header{background:#4a90e2;color:#fff;padding:15px 20px;font-size:18px;font-weight:bold;text-align:center}
+.search-bar{margin:10px 15px}
+.search-bar input{width:100%;padding:12px;border:1px solid #ddd;border-radius:10px;background:#fff;font-size:14px}
+.page{display:none;padding:15px}
+.page.active{display:block}
+.tab-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;display:flex;border-top:1px solid #eee;height:60px}
+.tab-bar .tab{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:12px;color:#666;cursor:pointer}
+.tab-bar .tab.active{color:#4a90e2}
+.room-item{background:#fff;border-radius:12px;padding:15px;margin-bottom:10px}
+.room-item .title{font-weight:bold;margin-bottom:5px}
+.mai-list{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.mai{width:55px;height:55px;background:#eee;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px}
+.user-info{display:flex;align-items:center;gap:15px;background:#fff;padding:15px;border-radius:12px;margin-bottom:15px}
+.avatar{width:70px;height:70px;border-radius:50%;background:#ddd;object-fit:cover}
+.info-text{flex:1}
+.info-text .name{font-size:18px;font-weight:bold;margin-bottom:4px}
+.info-text .id{font-size:14px;color:#666}
+.btn{background:#4a90e2;color:#fff;padding:10px 14px;border:none;border-radius:8px;margin-top:8px;cursor:pointer}
+.set-item{background:#fff;padding:15px;border-radius:12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+input[type="file"]{display:none}
+.community-item{background:#fff;padding:15px;border-radius:12px;margin-bottom:10px}
+.contact-item{background:#fff;padding:12px 15px;border-bottom:1px solid #f0f0f0}
+.msg-item{background:#fff;padding:12px;border-radius:8px;margin-bottom:8px}
+.input-send{display:flex;gap:5px;margin-top:10px}
+.input-send input{flex:1;padding:8px;border:1px solid #ddd;border-radius:8px}
+
+.login-box{max-width:400px;margin:50px auto;background:#fff;padding:30px;border-radius:12px}
+.login-box h2{text-align:center;margin-bottom:20px}
+.login-box input{width:100%;padding:12px;margin:8px 0;border:1px solid #ddd;border-radius:8px}
+.login-box .btn{width:100%;margin-top:10px}
+.login-box .link{text-align:center;margin-top:12px;font-size:14px;color:#666;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div id="page-login" class="page active">
+  <div class="login-box">
+    <h2>登录</h2>
+    <input id="login_uid" placeholder="请输入用户ID">
+    <input id="login_pwd" type="password" placeholder="请输入密码">
+    <button class="btn" onclick="login()">登录</button>
+    <div class="link" onclick="go(&#39;register&#39;)">没有账号？去注册</div>
+  </div>
+</div>
+
+<div id="page-register" class="page">
+  <div class="login-box">
+    <h2>注册</h2>
+    <input id="reg_uid" placeholder="设置用户ID（数字）">
+    <input id="reg_pwd" type="password" placeholder="设置密码">
+    <input id="reg_nick" placeholder="设置昵称">
+    <button class="btn" onclick="register()">注册</button>
+    <div class="link" onclick="go(&#39;login&#39;)">已有账号？返回登录</div>
+  </div>
+</div>
+
+<div class="header">永恒乐园</div>
+
+<div id="page-home" class="page">
+  <div class="search-bar">
+    <input type="text" placeholder="搜索好友名称/手机号/用户编号">
+  </div>
+  <h3 style="margin:15px">我的房间</h3>
+  <div class="room-item">
+    <div class="title">永恒乐园1号房</div>
+    <div>房主ID：10001</div>
+    <div class="mai-list" id="maiList"></div>
+    <div class="input-send">
+      <input id="msgText" placeholder="输入公屏消息">
+      <button class="btn" onclick="sendMsg()">发送</button>
+    </div>
+    <div id="msgList" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<div id="page-community" class="page">
+  <div class="community-item" onclick="speak(&#39;用户10001：大家好，欢迎来到永恒乐园！&#39;)">
+    <div style="font-weight:bold">用户10001</div>
+    <div>大家好，欢迎来到永恒乐园！</div>
+  </div>
+</div>
+
+<div id="page-contact" class="page"></div>
+
+<div id="page-me" class="page">
+  <div class="user-info">
+    <img id="avatar" class="avatar" src="./永恒_files/822-200x200.jpg">
+    <div class="info-text">
+      <div id="nickname">我的昵称</div>
+      <div>用户ID：<span id="myUid"></span></div>
+    </div>
+  </div>
+
+  <label class="btn"><input id="upload-avatar" type="file" accept="image/*">更换头像</label>
+  <button class="btn" onclick="changeNick()">修改昵称</button>
+
+  <h3 style="margin:20px 0 10px">设置</h3>
+  <div class="set-item">
+    <div>朗读公屏消息</div>
+    <input id="tts-enable" type="checkbox">
+  </div>
+  <div class="set-item">
+    <div>选择语音</div>
+    <select id="voice-select"><option value="0">Microsoft Huihui - Chinese (Simplified, PRC)（中文）</option><option value="1">Microsoft Kangkang - Chinese (Simplified, PRC)（中文）</option><option value="2">Microsoft Yaoyao - Chinese (Simplified, PRC)（中文）</option><option value="3">Google Deutsch</option><option value="4">Google US English</option><option value="5">Google UK English Female</option><option value="6">Google UK English Male</option><option value="7">Google español</option><option value="8">Google español de Estados Unidos</option><option value="9">Google français</option><option value="10">Google हिन्दी</option><option value="11">Google Bahasa Indonesia</option><option value="12">Google italiano</option><option value="13">Google 日本語</option><option value="14">Google 한국의</option><option value="15">Google Nederlands</option><option value="16">Google polski</option><option value="17">Google português do Brasil</option><option value="18">Google русский</option><option value="19">Google&nbsp;普通话（中国大陆）（中文）</option><option value="20">Google&nbsp;粤語（香港）</option><option value="21">Google 國語（臺灣）</option></select>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <div class="tab" onclick="go(&#39;home&#39;)">首页</div>
+  <div class="tab" onclick="go(&#39;community&#39;)">社区</div>
+  <div class="tab" onclick="go(&#39;contact&#39;)">通讯录</div>
+  <div class="tab" onclick="go(&#39;me&#39;)">我的</div>
+</div>
+
+<script>
+let myUid = "";
+let ws;
+let voices = [];
+
+// 页面切换
+function go(page) {
+  if (!myUid && !["login","register"].includes(page)) {
+    alert("请先登录");
+    go("login");
+    return;
+  }
+
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+
+  const tabMap = {home:0, community:1, contact:2, me:3};
+  if (tabMap[page] !== undefined) {
+    document.querySelectorAll('.tab')[tabMap[page]].classList.add('active');
+  }
+}
+
+// 注册
+async function register() {
+  const userId = document.getElementById('reg_uid').value.trim();
+  const pwd = document.getElementById('reg_pwd').value.trim();
+  const nick = document.getElementById('reg_nick').value.trim();
+  if(!userId || !pwd || !nick) {
+    alert('请填写完整');
+    return;
+  }
+  try {
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ userId, pwd, nick })
+    }).then(r=>r.json());
+    if(res.code === 0) {
+      alert('注册成功，请登录');
+      go('login');
+    } else {
+      alert(res.msg || '注册失败');
+    }
+  } catch(e) {
+    alert("网络错误，无法连接服务器");
+  }
+}
+
+// 登录
+async function login() {
+  const userId = document.getElementById('login_uid').value.trim();
+  const pwd = document.getElementById('login_pwd').value.trim();
+  if(!userId || !pwd) {
+    alert('请输入ID和密码');
+    return;
+  }
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ userId, pwd })
+    }).then(r=>r.json());
+    if(res.code === 0) {
+      myUid = userId;
+      document.getElementById('nickname').innerText = res.user.nick;
+      document.getElementById('myUid').innerText = myUid;
+      go('home');
+      loadMic();
+      loadMsg();
+      loadContacts();
+      connectWs();
+    } else {
+      alert(res.msg || '登录失败');
+    }
+  } catch(e) {
+    alert("网络错误，无法连接服务器");
+  }
+}
+
+// WebSocket
+function connectWs() {
+  try {
+    ws = new WebSocket('ws://' + location.host);
+    ws.onmessage = e => {
+      const data = JSON.parse(e.data);
+      if (data.type === 'msg') addMsg(data.data);
+      if (data.type === 'mic') renderMic(data.data);
+    };
+  } catch(e) {}
+}
+
+// 上麦
+async function setMic(index) {
+  if(!myUid) return;
+  try {
+    await fetch('/api/mic', {
+      method: 'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ roomId:1, index, userId: myUid })
+    });
+    loadMic();
+  } catch(e) {}
+}
+
+// 加载麦位
+async function loadMic() {
+  try {
+    const res = await fetch('/api/rooms').then(r=>r.json());
+    renderMic(res.rooms[1].mic);
+  } catch(e) {}
+}
+
+function renderMic(mic) {
+  const parent = document.getElementById('maiList');
+  parent.innerHTML = '';
+  const maiTitle = document.createElement('div');
+  maiTitle.className = 'mai';
+  maiTitle.innerText = '房主';
+  parent.appendChild(maiTitle);
+  mic.forEach((uid, i) => {
+    const div = document.createElement('div');
+    div.className = 'mai';
+    div.innerText = uid ? uid : '麦'+(i+1);
+    div.onclick = () => setMic(i);
+    parent.appendChild(div);
+  });
+}
+
+// 发送公屏
+async function sendMsg() {
+  const text = document.getElementById('msgText').value.trim();
+  if (!text || !myUid) return;
+  try {
+    await fetch('/api/send', {
+      method: 'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ roomId:1, userId: myUid, text })
+    });
+    document.getElementById('msgText').value = '';
+  } catch(e) {}
+}
+
+// 加载公屏
+async function loadMsg() {
+  try {
+    const res = await fetch('/api/messages/1').then(r=>r.json());
+    const list = document.getElementById('msgList');
+    list.innerHTML = '';
+    res.messages.forEach(m => addMsg(m));
+  } catch(e) {}
+}
+
+function addMsg(msg) {
+  const div = document.createElement('div');
+  div.className = 'msg-item';
+  div.innerText = msg.userId + "：" + msg.text;
+  document.getElementById('msgList').appendChild(div);
+  speak(msg.userId + "说" + msg.text);
+}
+
+// 通讯录
+async function loadContacts() {
+  try {
+    const res = await fetch('/api/contacts').then(r=>r.json());
+    const box = document.getElementById('page-contact');
+    box.innerHTML = '';
+    res.contacts.forEach(c => {
+      const div = document.createElement('div');
+      div.className = 'contact-item';
+      div.innerText = "好友：" + c.name + " (ID:" + c.userId + ")";
+      box.appendChild(div);
+    });
+  } catch(e) {}
+}
+
+// 头像
+document.getElementById('upload-avatar').onchange = async e => {
+  if(!myUid) return;
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  document.getElementById('avatar').src = url;
+  try {
+    await fetch('/api/profile', {
+      method: 'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ userId: myUid, avatar: url })
+    });
+  } catch(e) {}
+};
+
+// 昵称
+async function changeNick() {
+  if(!myUid) return;
+  const newName = prompt('新昵称');
+  if (!newName) return;
+  document.getElementById('nickname').innerText = newName;
+  try {
+    await fetch('/api/profile', {
+      method: 'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ userId: myUid, nick: newName })
+    });
+  } catch(e) {}
+}
+
+// TTS
+const ttsEnable = document.getElementById('tts-enable');
+const voiceSelect = document.getElementById('voice-select');
+
+function loadVoices() {
+  voices = speechSynthesis.getVoices();
+  voiceSelect.innerHTML = '';
+  voices.forEach((v,i)=>{
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.innerText = v.name + (v.lang === 'zh-CN' ? '（中文）' : '');
+    voiceSelect.appendChild(opt);
+  });
+}
+
+function speak(text) {
+  if (!ttsEnable.checked) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  if (voices[voiceSelect.value]) {
+    u.voice = voices[voiceSelect.value];
+  }
+  speechSynthesis.speak(u);
+}
+
+speechSynthesis.onvoiceschanged = loadVoices;
+loadVoices();
+</script>
+
+
+</body></html>
