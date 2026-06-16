@@ -1009,16 +1009,27 @@ func (s *PostgresStore) ListAdminProjectDomains(ctx context.Context, status stri
 
 func (s *PostgresStore) UpdateProjectDomainReview(ctx context.Context, domainID, status, rejectReason, adminNote, reviewedBy string) (domain.ProjectDomain, error) {
 	var item domain.ProjectDomain
+	var projectUsername string
+	var projectSlug string
 	err := s.pool.QueryRow(ctx, `
-		update project_domains
-		set status = $2, reject_reason = $3, admin_note = $4, reviewed_by_user_id = nullif($5, '')::uuid, reviewed_at = now(), updated_at = now()
-		where id::text = $1
-		returning id::text, project_id::text, owner_user_id::text, subdomain, domain, status, reject_reason, admin_note,
-			coalesce(reviewed_by_user_id::text, ''), reviewed_at, created_at, updated_at
-	`, domainID, status, rejectReason, adminNote, reviewedBy).Scan(&item.ID, &item.ProjectID, &item.OwnerUserID, &item.Subdomain, &item.Domain, &item.Status, &item.RejectReason, &item.AdminNote, &item.ReviewedBy, &item.ReviewedAt, &item.CreatedAt, &item.UpdatedAt)
+		with updated as (
+			update project_domains
+			set status = $2, reject_reason = $3, admin_note = $4, reviewed_by_user_id = nullif($5, '')::uuid, reviewed_at = now(), updated_at = now()
+			where id::text = $1
+			returning id, project_id, owner_user_id, subdomain, domain, status, reject_reason, admin_note,
+				reviewed_by_user_id, reviewed_at, created_at, updated_at
+		)
+		select d.id::text, d.project_id::text, p.name, p.username, p.slug, d.owner_user_id::text, u.email, coalesce(u.username, ''),
+			d.subdomain, d.domain, d.status, d.reject_reason, d.admin_note, coalesce(d.reviewed_by_user_id::text, ''),
+			d.reviewed_at, d.created_at, d.updated_at
+		from updated d
+		join projects p on p.id = d.project_id
+		join users u on u.id = d.owner_user_id
+	`, domainID, status, rejectReason, adminNote, reviewedBy).Scan(&item.ID, &item.ProjectID, &item.ProjectName, &projectUsername, &projectSlug, &item.OwnerUserID, &item.OwnerEmail, &item.Username, &item.Subdomain, &item.Domain, &item.Status, &item.RejectReason, &item.AdminNote, &item.ReviewedBy, &item.ReviewedAt, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return domain.ProjectDomain{}, err
 	}
+	item.ProjectPublicURL = buildPublicURL(s.publicBase, projectUsername, projectSlug)
 	return item, nil
 }
 
@@ -1099,17 +1110,28 @@ func (s *PostgresStore) ListAdminRepairRequests(ctx context.Context, status stri
 
 func (s *PostgresStore) UpdateRepairRequest(ctx context.Context, requestID, status, adminReply, reviewedBy string) (domain.RepairRequest, error) {
 	var item domain.RepairRequest
+	var projectUsername string
+	var projectSlug string
 	err := s.pool.QueryRow(ctx, `
-		update repair_requests
-		set status = $2, admin_reply = $3, reviewed_by_user_id = nullif($4, '')::uuid, reviewed_at = now(), updated_at = now()
-		where id::text = $1
-		returning id::text, project_id::text, owner_user_id::text, issue_type, description, expected, allow_admin_edit, contact,
-			status, admin_reply, user_reply, coalesce(user_replied_at, '0001-01-01T00:00:00Z'::timestamptz),
-			coalesce(reviewed_by_user_id::text, ''), reviewed_at, created_at, updated_at
-	`, requestID, status, adminReply, reviewedBy).Scan(&item.ID, &item.ProjectID, &item.OwnerUserID, &item.IssueType, &item.Description, &item.Expected, &item.AllowAdminEdit, &item.Contact, &item.Status, &item.AdminReply, &item.UserReply, &item.UserRepliedAt, &item.ReviewedBy, &item.ReviewedAt, &item.CreatedAt, &item.UpdatedAt)
+		with updated as (
+			update repair_requests
+			set status = $2, admin_reply = $3, reviewed_by_user_id = nullif($4, '')::uuid, reviewed_at = now(), updated_at = now()
+			where id::text = $1
+			returning id, project_id, owner_user_id, issue_type, description, expected, allow_admin_edit, contact,
+				status, admin_reply, user_reply, user_replied_at, reviewed_by_user_id, reviewed_at, created_at, updated_at
+		)
+		select r.id::text, r.project_id::text, p.name, p.username, p.slug, r.owner_user_id::text, u.email, coalesce(u.username, ''),
+			r.issue_type, r.description, r.expected, r.allow_admin_edit, r.contact, r.status, r.admin_reply, r.user_reply,
+			coalesce(r.user_replied_at, '0001-01-01T00:00:00Z'::timestamptz),
+			coalesce(r.reviewed_by_user_id::text, ''), r.reviewed_at, r.created_at, r.updated_at
+		from updated r
+		join projects p on p.id = r.project_id
+		join users u on u.id = r.owner_user_id
+	`, requestID, status, adminReply, reviewedBy).Scan(&item.ID, &item.ProjectID, &item.ProjectName, &projectUsername, &projectSlug, &item.OwnerUserID, &item.OwnerEmail, &item.Username, &item.IssueType, &item.Description, &item.Expected, &item.AllowAdminEdit, &item.Contact, &item.Status, &item.AdminReply, &item.UserReply, &item.UserRepliedAt, &item.ReviewedBy, &item.ReviewedAt, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return domain.RepairRequest{}, err
 	}
+	item.ProjectPublicURL = buildPublicURL(s.publicBase, projectUsername, projectSlug)
 	return item, nil
 }
 

@@ -282,12 +282,6 @@ func (rt *Router) handleVerifyCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, existedBeforeVerify, err := rt.store.GetUserByEmail(r.Context(), input.Email)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "校验验证码失败"})
-		return
-	}
-
 	user, ok, err := rt.store.ConsumeAuthCode(r.Context(), input, time.Now().UTC())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "校验验证码失败"})
@@ -296,9 +290,6 @@ func (rt *Router) handleVerifyCode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "验证码不对，或者已经过期"})
 		return
-	}
-	if !existedBeforeVerify {
-		rt.notifyWelcomeUser(user)
 	}
 
 	token, err := generateToken(32)
@@ -388,6 +379,9 @@ func (rt *Router) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if err := rt.store.SyncProjectUsernames(r.Context(), user.ID, updated.Username); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "\u540c\u6b65\u4f5c\u54c1\u5730\u5740\u5931\u8d25"})
 		return
+	}
+	if shouldSendWelcomeAfterProfileUpdate(user, updated) {
+		rt.notifyWelcomeUser(updated)
 	}
 	projects, err := rt.store.ListProjects(r.Context(), user.ID)
 	if err == nil {

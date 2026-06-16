@@ -25,6 +25,16 @@ func (rt *Router) notifyWelcomeUser(user domain.User) {
 	}()
 }
 
+func shouldSendWelcomeAfterProfileUpdate(before, after domain.User) bool {
+	beforeName := strings.TrimSpace(before.Username)
+	afterName := strings.TrimSpace(after.Username)
+	if afterName == "" || beforeName == afterName {
+		return false
+	}
+	emailPrefix := strings.Split(strings.TrimSpace(before.Email), "@")[0]
+	return beforeName == "" || beforeName == emailPrefix
+}
+
 func (rt *Router) notifyProjectDomainReview(item domain.ProjectDomain) {
 	if rt.mailer == nil || strings.TrimSpace(item.OwnerEmail) == "" {
 		return

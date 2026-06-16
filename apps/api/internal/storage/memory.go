@@ -697,6 +697,14 @@ func (s *MemoryStore) UpdateProjectDomainReview(_ context.Context, domainID, sta
 	item.ReviewedAt = time.Now().UTC()
 	item.UpdatedAt = item.ReviewedAt
 	s.projectDomains[domainID] = item
+	if project, ok := s.projects[item.ProjectID]; ok {
+		item.ProjectName = project.Name
+		item.ProjectPublicURL = project.PublicURL
+	}
+	if user, ok := s.users[item.OwnerUserID]; ok {
+		item.OwnerEmail = user.Email
+		item.Username = user.Username
+	}
 	return item, nil
 }
 
@@ -761,6 +769,14 @@ func (s *MemoryStore) UpdateRepairRequest(_ context.Context, requestID, status, 
 	item.ReviewedAt = time.Now().UTC()
 	item.UpdatedAt = item.ReviewedAt
 	s.repairRequests[requestID] = item
+	if project, ok := s.projects[item.ProjectID]; ok {
+		item.ProjectName = project.Name
+		item.ProjectPublicURL = project.PublicURL
+	}
+	if user, ok := s.users[item.OwnerUserID]; ok {
+		item.OwnerEmail = user.Email
+		item.Username = user.Username
+	}
 	return item, nil
 }
 
