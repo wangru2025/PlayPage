@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { postJSON } from "@/lib/api";
 
 type AuthCodeResponse = {
@@ -24,6 +24,8 @@ const text = {
   email: "邮箱",
   emailPlaceholder: "例如：name@example.com",
   requestCode: "发送验证码",
+  resendCode: "重新发送",
+  resendCountdown: "重新发送（{seconds} 秒）",
   code: "验证码",
   codePlaceholder: "6 位验证码",
   verifyCode: "进入 PlayPage",
@@ -42,6 +44,7 @@ export function AuthGate() {
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [working, setWorking] = useState(false);
+  const [resendSeconds, setResendSeconds] = useState(0);
   const [statusText, setStatusText] = useState("");
   const [statusTone, setStatusTone] = useState<StatusTone>("info");
   const emailId = useId();
@@ -52,8 +55,18 @@ export function AuthGate() {
     setStatusTone(tone);
   }
 
+  useEffect(() => {
+    if (resendSeconds <= 0) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      setResendSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendSeconds]);
+
   async function requestCode() {
-    if (working) {
+    if (working || resendSeconds > 0) {
       return;
     }
     if (email.trim() === "") {
@@ -67,6 +80,7 @@ export function AuthGate() {
         email
       });
       setCodeSent(true);
+      setResendSeconds(60);
       setStatus(text.sentOk, "success");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : text.sentFail, "error");
@@ -74,6 +88,12 @@ export function AuthGate() {
       setWorking(false);
     }
   }
+
+  const requestCodeText = resendSeconds > 0
+    ? text.resendCountdown.replace("{seconds}", String(resendSeconds))
+    : codeSent
+      ? text.resendCode
+      : text.requestCode;
 
   async function verifyCode() {
     if (working) {
@@ -133,8 +153,8 @@ export function AuthGate() {
         </div>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button className="button-primary" type="button" disabled={working} onClick={requestCode}>
-            {text.requestCode}
+          <button className="button-primary" type="button" disabled={working || resendSeconds > 0} onClick={requestCode}>
+            {requestCodeText}
           </button>
         </div>
 
