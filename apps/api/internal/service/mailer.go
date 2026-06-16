@@ -1,13 +1,16 @@
 package service
 
 import (
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"mime"
 	"net"
 	"net/smtp"
 	"strings"
+	"time"
 )
 
 type Mailer struct {
@@ -38,67 +41,105 @@ func (m *Mailer) SendCode(to, code string) error {
 
 func (m *Mailer) SendText(to, subject, body string) error {
 	to = strings.TrimSpace(to)
+	start := time.Now()
+	maskedTo := maskMailAddress(to)
 	if m.IsNoop() {
-		log.Printf("mail disabled, to=%s subject=%q", to, subject)
+		log.Printf("mail_send_disabled to=%s subject=%q", maskedTo, subject)
 		return nil
 	}
 	if to == "" {
 		return fmt.Errorf("mail recipient is empty")
 	}
+	log.Printf("mail_send_start to=%s subject=%q smtp_host=%s", maskedTo, subject, m.host)
 
 	conn, err := net.Dial("tcp", net.JoinHostPort(m.host, m.port))
 	if err != nil {
-		return fmt.Errorf("dial smtp: %w", err)
+		return m.mailError("dial_smtp", maskedTo, subject, start, err)
 	}
 	defer conn.Close()
 
 	client, err := smtp.NewClient(conn, m.host)
 	if err != nil {
-		return fmt.Errorf("create smtp client: %w", err)
+		return m.mailError("create_smtp_client", maskedTo, subject, start, err)
 	}
 	defer client.Close()
 
 	if ok, _ := client.Extension("STARTTLS"); ok {
 		if err := client.StartTLS(&tls.Config{ServerName: m.host, MinVersion: tls.VersionTLS12}); err != nil {
-			return fmt.Errorf("starttls: %w", err)
+			return m.mailError("starttls", maskedTo, subject, start, err)
 		}
 	}
 
 	if m.username != "" && m.password != "" {
 		if ok, _ := client.Extension("AUTH"); ok {
 			if err := client.Auth(smtp.PlainAuth("", m.username, m.password, m.host)); err != nil {
-				return fmt.Errorf("smtp auth: %w", err)
+				return m.mailError("smtp_auth", maskedTo, subject, start, err)
 			}
 		}
 	}
 
 	if err := client.Mail(m.fromEmail); err != nil {
-		return fmt.Errorf("mail from: %w", err)
+		return m.mailError("mail_from", maskedTo, subject, start, err)
 	}
 	if err := client.Rcpt(to); err != nil {
-		return fmt.Errorf("mail rcpt: %w", err)
+		return m.mailError("mail_rcpt", maskedTo, subject, start, err)
 	}
 
 	writer, err := client.Data()
 	if err != nil {
-		return fmt.Errorf("mail data: %w", err)
+		return m.mailError("mail_data", maskedTo, subject, start, err)
 	}
 	message := fmt.Sprintf(
-		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
+		"From: %s\r\nTo: %s\r\nDate: %s\r\nMessage-ID: <%s>\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\nX-Mailer: PlayPage Mailer\r\n\r\n%s\r\n",
 		m.fromEmail,
 		to,
+		time.Now().Format(time.RFC1123Z),
+		m.messageID(),
 		mime.QEncoding.Encode("utf-8", subject),
 		body,
 	)
 	if _, err := writer.Write([]byte(message)); err != nil {
 		_ = writer.Close()
-		return fmt.Errorf("write mail body: %w", err)
+		return m.mailError("write_mail_body", maskedTo, subject, start, err)
 	}
 	if err := writer.Close(); err != nil {
-		return fmt.Errorf("close mail body: %w", err)
+		return m.mailError("close_mail_body", maskedTo, subject, start, err)
 	}
 	if err := client.Quit(); err != nil {
-		return fmt.Errorf("quit smtp client: %w", err)
+		return m.mailError("quit_smtp_client", maskedTo, subject, start, err)
 	}
+	log.Printf("mail_send_ok to=%s subject=%q duration=%s", maskedTo, subject, time.Since(start))
 	return nil
+}
+
+func (m *Mailer) mailError(stage, maskedTo, subject string, start time.Time, err error) error {
+	wrapped := fmt.Errorf("%s: %w", strings.ReplaceAll(stage, "_", " "), err)
+	log.Printf("mail_send_failed stage=%s to=%s subject=%q duration=%s err=%v", stage, maskedTo, subject, time.Since(start), err)
+	return wrapped
+}
+
+func (m *Mailer) messageID() string {
+	var random [12]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return fmt.Sprintf("%d@%s", time.Now().UnixNano(), m.host)
+	}
+	host := m.host
+	if host == "" {
+		host = "playpage.local"
+	}
+	return fmt.Sprintf("%d.%s@%s", time.Now().UnixNano(), hex.EncodeToString(random[:]), host)
+}
+
+func maskMailAddress(address string) string {
+	address = strings.TrimSpace(address)
+	at := strings.LastIndex(address, "@")
+	if at <= 0 {
+		return "***"
+	}
+	name := address[:at]
+	domain := address[at+1:]
+	if len(name) <= 2 {
+		return name[:1] + "***@" + domain
+	}
+	return name[:2] + "***@" + domain
 }
