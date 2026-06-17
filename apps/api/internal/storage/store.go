@@ -56,6 +56,7 @@ type Store interface {
 	CreateRepairAIJob(ctx context.Context, input domain.RepairAIJob) (domain.RepairAIJob, error)
 	GetRepairAIJob(ctx context.Context, jobID string) (domain.RepairAIJob, bool, error)
 	GetLatestRepairAIJob(ctx context.Context, repairRequestID string) (domain.RepairAIJob, bool, error)
+	ListRepairAIJobs(ctx context.Context, repairRequestID string) ([]domain.RepairAIJob, error)
 	GetActiveRepairAIJobByUser(ctx context.Context, userID string) (domain.RepairAIJob, bool, error)
 	CountRepairAIJobsForUserSince(ctx context.Context, userID string, since time.Time) (int, error)
 	UpdateRepairAIJob(ctx context.Context, job domain.RepairAIJob) (domain.RepairAIJob, error)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -851,6 +852,24 @@ func (s *MemoryStore) GetLatestRepairAIJob(_ context.Context, repairRequestID st
 		}
 	}
 	return latest, ok, nil
+}
+
+func (s *MemoryStore) ListRepairAIJobs(_ context.Context, repairRequestID string) ([]domain.RepairAIJob, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.RepairAIJob{}
+	for _, item := range s.repairAIJobs {
+		if item.RepairRequestID == repairRequestID {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Round != items[j].Round {
+			return items[i].Round < items[j].Round
+		}
+		return items[i].CreatedAt.Before(items[j].CreatedAt)
+	})
+	return items, nil
 }
 
 func (s *MemoryStore) GetActiveRepairAIJobByUser(_ context.Context, userID string) (domain.RepairAIJob, bool, error) {

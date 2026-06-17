@@ -1214,6 +1214,26 @@ func (s *PostgresStore) GetLatestRepairAIJob(ctx context.Context, repairRequestI
 	return item, true, nil
 }
 
+func (s *PostgresStore) ListRepairAIJobs(ctx context.Context, repairRequestID string) ([]domain.RepairAIJob, error) {
+	rows, err := s.pool.Query(ctx, `
+		select id::text, repair_request_id::text, project_id::text, owner_user_id::text, status, round, feedback, coalesce(generated_html, ''), coalesce(preview_url, ''), coalesce(error_message, ''), created_at, updated_at, coalesce(finished_at, '0001-01-01T00:00:00Z'::timestamptz)
+		from repair_ai_jobs where repair_request_id::text = $1 order by round asc, created_at asc
+	`, repairRequestID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.RepairAIJob{}
+	for rows.Next() {
+		var item domain.RepairAIJob
+		if err := rows.Scan(&item.ID, &item.RepairRequestID, &item.ProjectID, &item.OwnerUserID, &item.Status, &item.Round, &item.Feedback, &item.GeneratedHTML, &item.PreviewURL, &item.ErrorMessage, &item.CreatedAt, &item.UpdatedAt, &item.FinishedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *PostgresStore) GetActiveRepairAIJobByUser(ctx context.Context, userID string) (domain.RepairAIJob, bool, error) {
 	var item domain.RepairAIJob
 	err := s.pool.QueryRow(ctx, `

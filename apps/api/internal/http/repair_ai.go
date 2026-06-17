@@ -231,7 +231,6 @@ func (rt *Router) handleRepairAIFeedback(w http.ResponseWriter, r *http.Request,
 		writeJSON(w, 400, map[string]string{"error": "请填写问题还存在什么情况"})
 		return
 	}
-	feedback = rt.feedbackWithPreviousRoundContext(r.Context(), latest, feedback)
 	rt.handleStartRepairAI(w, r, projectID, requestID, feedback)
 }
 
@@ -383,11 +382,12 @@ func (rt *Router) runRepairAIRoundtable(ctx context.Context, user domain.User, p
 	if project.Interactive {
 		apiDoc = rt.buildInteractiveDocForPrompt(ctx, project)
 	}
-	previous := rt.previousRepairAIMessages(ctx, req.ID, job.ID)
-	if previous == "" && strings.Contains(job.Feedback, "上一轮圆桌记录：") {
-		previous = job.Feedback
+	allRoundsContext := rt.allRepairAIRoundContext(ctx, req.ID, job.ID)
+	roundGoal := "这是第 1 轮圆桌：先根据用户原始问题诊断并修复。"
+	if job.Round > 1 {
+		roundGoal = fmt.Sprintf("这是第 %d 轮圆桌：必须先理解当前这条修复申请内的所有历史轮次、失败原因和用户最新反馈，然后在现有发布版基础上继续迭代，不能重复上一轮已经失败的方向。不要读取或引用同一作品其他修复申请的问题。", job.Round)
 	}
-	basePrompt := fmt.Sprintf("作品名：%s\n作品地址：%s\n用户问题：%s\n期望效果：%s\n本轮用户补充：%s\n上一轮圆桌上下文：\n%s\n\n互动 API 文档：\n%s\n\n当前入口 HTML：\n%s", project.Name, project.PublicURL, req.Description, req.Expected, job.Feedback, previous, trimMiddle(apiDoc, 60000), sourceForPrompt)
+	basePrompt := fmt.Sprintf("作品名：%s\n作品地址：%s\n修复申请 ID：%s\n用户原始问题：%s\n期望效果：%s\n当前轮次：第 %d 轮\n本轮目标：%s\n本轮用户补充：%s\n当前修复申请内的历史圆桌上下文：\n%s\n\n互动 API 文档：\n%s\n\n当前入口 HTML：\n%s", project.Name, project.PublicURL, req.ID, req.Description, req.Expected, job.Round, roundGoal, job.Feedback, allRoundsContext, trimMiddle(apiDoc, 60000), sourceForPrompt)
 	transcript := ""
 	roundtableAgents := []repairAIAgent{
 		{Key: "reader", Name: "作品读取员", Persona: "你负责快速读懂作品。指出作品结构、入口文件、用户想要什么，以及最可能坏在哪里。语气可以像打工人吐槽，但不要攻击用户。"},
@@ -397,10 +397,13 @@ func (rt *Router) runRepairAIRoundtable(ctx context.Context, user domain.User, p
 	}
 	for _, agent := range roundtableAgents {
 		rt.addAIMessage(ctx, &job, agent.Key, agent.Name, "assistant", "status", agent.Name+"正在发言。")
-		speech, err := rt.generateRepairAISpeech(ctx, agent, basePrompt, transcript)
+		speech, err := rt.generateRepairAISpeechWithTools(ctx, agent, basePrompt, source, apiDoc, allRoundsContext, transcript, job.Round)
 		if err != nil {
-			fail(err.Error())
-			return
+			speech, err = rt.generateRepairAISpeech(ctx, agent, basePrompt, transcript)
+			if err != nil {
+				fail(err.Error())
+				return
+			}
 		}
 		speech = trimLimit(speech, 1600)
 		rt.addAIMessage(ctx, &job, agent.Key, agent.Name, "assistant", "text", speech)
@@ -432,7 +435,7 @@ patch 必须严格使用这种格式：
 - 不要引入需要构建的框架。
 - 不要输出解释文本，只输出 JSON。`
 	prompt := basePrompt + "\n\n圆桌讨论记录：\n" + transcript + "\n请现在给出最终局部补丁。"
-	visible, fixed, err := rt.generateAndApplyRepairPatch(ctx, &job, system, prompt, source)
+	visible, fixed, err := rt.generateAndApplyRepairPatch(ctx, &job, system, prompt, source, apiDoc, allRoundsContext, transcript)
 	if err != nil {
 		fail(err.Error())
 		return
@@ -456,10 +459,16 @@ patch 必须严格使用这种格式：
 	rt.broadcastJob(updated, "job")
 }
 
-func (rt *Router) generateAndApplyRepairPatch(ctx context.Context, job *domain.RepairAIJob, system, prompt, source string) (string, string, error) {
+func (rt *Router) generateAndApplyRepairPatch(ctx context.Context, job *domain.RepairAIJob, system, prompt, source, apiDoc, allRoundsContext, transcript string) (string, string, error) {
+	if fixedVisible, fixedHTML, err := rt.generateRepairWithToolLoop(ctx, job, system, prompt, source, apiDoc, allRoundsContext, transcript); err == nil {
+		return fixedVisible, fixedHTML, nil
+	} else {
+		rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", "工具循环没有完成修复，降级为兼容补丁模式："+err.Error())
+	}
 	var lastPatch string
 	var lastErr error
 	var visible string
+	const maxPatchAttempts = 8
 	for attempt := 1; ; attempt++ {
 		if ctx.Err() != nil {
 			return "", "", ctx.Err()
@@ -469,9 +478,26 @@ func (rt *Router) generateAndApplyRepairPatch(ctx context.Context, job *domain.R
 		}
 		nextPrompt := prompt
 		if lastErr != nil {
-			nextPrompt = prompt + "\n\n上一份补丁：\n" + lastPatch + "\n\n后端应用补丁失败，错误是：\n" + lastErr.Error() + "\n\n请重新输出 JSON，只输出 visible_message 和 patch。新 patch 必须使用当前入口 HTML 中可以精确匹配的原文；每一行必须是 apply_patch 兼容格式。"
+			nextPrompt = prompt + "\n\n上一份补丁摘要：\n" + trimLimit(lastPatch, 5000) + "\n\n后端应用补丁失败，错误是：\n" + lastErr.Error() + "\n\n请重新输出 JSON，只输出 visible_message 和 patch。新 patch 必须使用当前入口 HTML 中可以精确匹配的原文；每一行必须是 apply_patch 兼容格式；每个修改块至少保留 2 行上下文。"
+			if attempt >= maxPatchAttempts {
+				nextPrompt = prompt + "\n\n前面多次补丁都没能成功应用。请改为直接输出完整修复后的 HTML，只输出 JSON，字段为 visible_message 和 fixed_html。不要再输出 patch。"
+			}
 		}
-		content, err := rt.aiClient.CompletePlain(ctx, []service.AIMessage{{Role: "system", Content: system}, {Role: "user", Content: nextPrompt}}, 6000)
+		activeSystem := system
+		if attempt >= maxPatchAttempts {
+			activeSystem = `你是 PlayPage 网页急救圆桌的最终修复员。前面多次局部补丁都无法应用。
+现在请直接输出一个 JSON 对象，不要 Markdown，不要代码块。
+JSON 字段：
+- visible_message：中文，给用户看的简短圆桌总结。
+- fixed_html：完整修复后的 HTML。
+
+硬性要求：
+- fixed_html 必须是完整 HTML 页面。
+- 保留原作品的主要功能、样式、互动 API key 和相对 API 地址。
+- 不要删除用户数据，不要把 API 地址改成其他域名。
+- 不要引入需要构建的框架。`
+		}
+		content, err := rt.aiClient.CompletePlain(ctx, []service.AIMessage{{Role: "system", Content: activeSystem}, {Role: "user", Content: nextPrompt}}, 6000)
 		if err != nil {
 			if ctx.Err() != nil {
 				return "", "", ctx.Err()
@@ -487,10 +513,20 @@ func (rt *Router) generateAndApplyRepairPatch(ctx context.Context, job *domain.R
 			continue
 		}
 		rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", fmt.Sprintf("修复员第 %d 次交卷，正在应用局部补丁。", attempt))
+		if attempt >= maxPatchAttempts {
+			patchVisible, fixedHTML, err := parseRepairAIResult(content)
+			if err == nil {
+				if patchVisible != "" {
+					visible = patchVisible
+				}
+				return visible, ensureRepairHTML(fixedHTML), nil
+			}
+		}
 		patchVisible, patchText, err := parseRepairAIPatchResult(content)
 		if err != nil {
 			lastPatch = content
 			lastErr = fmt.Errorf("AI 返回的补丁格式不正确：%w", err)
+			rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", fmt.Sprintf("第 %d 次补丁解析失败：%s", attempt, summarizePatchFailure(content, lastErr.Error())))
 			continue
 		}
 		if patchVisible != "" {
@@ -500,9 +536,130 @@ func (rt *Router) generateAndApplyRepairPatch(ctx context.Context, job *domain.R
 		fixed, err := applyRepairAIPatch(source, patchText)
 		if err != nil {
 			lastErr = err
+			rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", fmt.Sprintf("第 %d 次补丁应用失败：%s", attempt, summarizePatchFailure(patchText, err.Error())))
 			continue
 		}
 		return visible, fixed, nil
+	}
+}
+
+func (rt *Router) generateRepairWithToolLoop(ctx context.Context, job *domain.RepairAIJob, system, prompt, source, apiDoc, allRoundsContext, transcript string) (string, string, error) {
+	const maxToolTurns = 10
+	current := source
+	visible := ""
+	tools := append(repairReadTools(), repairApplyPatchTool())
+	messages := []service.AIMessage{
+		{Role: "system", Content: system + "\n\n你现在拥有工具。硬性流程：\n1. 必须先调用 read_current_html，至少读取 summary；涉及具体函数时必须用 search 查目标函数或关键词。\n2. 如果作品有互动功能，必须调用 read_interactive_api_doc。\n3. 如果当前不是第 1 轮，必须调用 read_all_rounds_context。这个工具只返回当前修复申请内的历史轮次，不包含同一作品其他申请。你要理解此前每一轮做过什么、失败在哪里、用户最新反馈是什么，然后继续迭代，不能从头乱改。\n4. 看完工具返回后，才能调用 apply_patch 修改当前 HTML。\n5. apply_patch 返回失败时，必须根据工具返回的错误重新读取相关 HTML 片段，再重新生成补丁。\n6. 补丁成功后，再输出 JSON：{\"visible_message\":\"...\",\"fixed_html\":\"...\"}。\n7. 不要凭记忆改代码，不要假装工具成功。"},
+		{Role: "user", Content: basePromptWithoutLargeContext(prompt) + "\n\n请按工具流程修复。"},
+	}
+	readHTML := false
+	readHistory := false
+	for turn := 1; turn <= maxToolTurns; turn++ {
+		if ctx.Err() != nil {
+			return "", "", ctx.Err()
+		}
+		msg, finish, err := rt.aiClient.Chat(ctx, messages, tools, "auto", 8000, true)
+		if err != nil {
+			return "", "", err
+		}
+		messages = append(messages, msg)
+		if len(msg.ToolCalls) == 0 {
+			if !readHTML {
+				messages = append(messages, service.AIMessage{Role: "user", Content: "你还没有读取当前 HTML。必须先调用 read_current_html 工具，必要时用 search 读取相关代码片段，然后再修复。"})
+				continue
+			}
+			if job.Round > 1 && !readHistory {
+				messages = append(messages, service.AIMessage{Role: "user", Content: "这是多轮圆桌。你还没有读取当前修复申请内的历史轮次。必须调用 read_all_rounds_context，理解历史失败原因和用户反馈后再继续。"})
+				continue
+			}
+			if strings.TrimSpace(msg.Content) == "" && finish == "tool_calls" {
+				return "", "", fmt.Errorf("AI 要求调用工具，但没有返回工具参数")
+			}
+			v, htmlText, err := parseRepairAIResult(msg.Content)
+			if err == nil {
+				if v != "" {
+					visible = v
+				}
+				return visible, ensureRepairHTML(htmlText), nil
+			}
+			return "", "", fmt.Errorf("AI 没有调用 apply_patch，也没有返回完整 HTML：%w", err)
+		}
+		for _, call := range msg.ToolCalls {
+			switch call.Function.Name {
+			case "read_current_html":
+				readHTML = true
+			case "read_all_rounds_context", "read_previous_context":
+				readHistory = true
+			}
+			if call.Function.Name != "apply_patch" {
+				result := executeRepairReadTool(call.Function.Name, call.Function.Arguments, current, apiDoc, allRoundsContext, transcript)
+				messages = append(messages, service.AIMessage{Role: "tool", ToolCallID: call.ID, Content: result})
+				continue
+			}
+			if !readHTML {
+				messages = append(messages, service.AIMessage{Role: "tool", ToolCallID: call.ID, Content: `{"ok":false,"error":"调用 apply_patch 前必须先调用 read_current_html 读取当前 HTML。"}`})
+				continue
+			}
+			if job.Round > 1 && !readHistory {
+				messages = append(messages, service.AIMessage{Role: "tool", ToolCallID: call.ID, Content: `{"ok":false,"error":"这是多轮圆桌，调用 apply_patch 前必须先调用 read_all_rounds_context 读取当前修复申请内的历史轮次。"}`})
+				continue
+			}
+			var args struct {
+				Patch string `json:"patch"`
+			}
+			if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil || strings.TrimSpace(args.Patch) == "" {
+				messages = append(messages, service.AIMessage{Role: "tool", ToolCallID: call.ID, Content: `{"ok":false,"error":"apply_patch 参数必须是 JSON，且包含非空 patch 字符串"}`})
+				continue
+			}
+			rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", fmt.Sprintf("修复员第 %d 轮调用 apply_patch 工具。", turn))
+			next, err := applyRepairAIPatch(current, args.Patch)
+			if err != nil {
+				result := map[string]any{
+					"ok":              false,
+					"error":           err.Error(),
+					"patch_summary":   trimLimit(args.Patch, 1200),
+					"current_hint":    "请基于当前入口 HTML 中真实存在的原文重新生成补丁。不要复用失败补丁。",
+					"supported_files": []string{"index.html"},
+				}
+				data, _ := json.Marshal(result)
+				messages = append(messages, service.AIMessage{Role: "tool", ToolCallID: call.ID, Content: string(data)})
+				rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", "apply_patch 工具返回失败："+err.Error())
+				continue
+			}
+			current = next
+			result := map[string]any{
+				"ok":           true,
+				"message":      "补丁已应用到当前 HTML。可以继续调用 apply_patch，或输出最终 JSON。",
+				"current_html": trimMiddle(current, 30000),
+			}
+			data, _ := json.Marshal(result)
+			messages = append(messages, service.AIMessage{Role: "tool", ToolCallID: call.ID, Content: string(data)})
+			rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", "apply_patch 工具已成功应用补丁。")
+		}
+	}
+	if current != source {
+		return "AI 已通过 apply_patch 工具完成局部修复，请预览效果。", current, nil
+	}
+	return "", "", fmt.Errorf("AI 多轮工具调用后仍未产生可用修改")
+}
+
+func repairApplyPatchTool() service.AITool {
+	return service.AITool{
+		Type: "function",
+		Function: service.AIToolFunction{
+			Name:        "apply_patch",
+			Description: "Apply an apply_patch style patch to the current index.html. Use this for every code change instead of describing changes in prose.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"patch": map[string]any{
+						"type":        "string",
+						"description": "Patch text including *** Begin Patch and *** End Patch. Only update index.html.",
+					},
+				},
+				"required": []string{"patch"},
+			},
+		},
 	}
 }
 
@@ -542,6 +699,79 @@ func (rt *Router) generateRepairAISpeech(ctx context.Context, agent repairAIAgen
 - 不要声称已经修改文件，你现在只是圆桌发言。`, agent.Name, agent.Persona)
 	prompt := basePrompt + "\n\n前面角色发言：\n" + transcript + "\n请轮到你发言。"
 	return rt.aiClient.CompletePlain(ctx, []service.AIMessage{{Role: "system", Content: system}, {Role: "user", Content: prompt}}, 1200)
+}
+
+func (rt *Router) generateRepairAISpeechWithTools(ctx context.Context, agent repairAIAgent, basePrompt, source, apiDoc, allRoundsContext, transcript string, round int) (string, error) {
+	tools := repairReadTools()
+	system := fmt.Sprintf(`你是 PlayPage 网页急救圆桌里的「%s」。%s
+你可以调用阅读工具获取当前 HTML、互动 API 文档、当前修复申请内的所有历史轮次上下文和前面角色发言。
+硬性流程：
+1. 必须先调用 read_current_html，至少读取 summary。
+2. 如果你要评价某个函数、API 调用或按钮事件，必须用 read_current_html 的 search 模式读取相关片段。
+3. 互动 API 守门员必须调用 read_interactive_api_doc；其他角色发现涉及云存档/评论/排行榜也必须调用。
+4. 挑刺检查员必须调用 read_roundtable_transcript。
+5. 有历史轮次时必须调用 read_all_rounds_context；它只返回当前修复申请内的历史圆桌，不包含同一作品其他修复申请。read_previous_context 只是兼容别名，也返回当前修复申请内全部历史轮次。
+6. 工具读完后，只输出你这一位角色的一段中文发言，不要 JSON，不要 Markdown 表格，不要代码块。
+不要假装看过没读的内容，不要编造代码细节，不要声称已经修改文件。
+要求：
+- 80 到 220 字。
+- 说人话，用户能看懂。
+- 可以有一点打工人式幽默，但不要低俗，不要嘲笑用户。
+- 必须围绕这次作品修复，说清楚你发现了什么、建议怎么改。
+- 你现在只是圆桌发言。`, agent.Name, agent.Persona)
+	messages := []service.AIMessage{
+		{Role: "system", Content: system},
+		{Role: "user", Content: basePromptWithoutLargeContext(basePrompt) + fmt.Sprintf("\n\n你现在是第 %d 轮圆桌角色。请先调用工具读取必要上下文，然后轮到你发言。", round)},
+	}
+	readHTML := false
+	readHistory := false
+	readAPIDoc := false
+	readTranscript := false
+	for turn := 1; turn <= 6; turn++ {
+		msg, _, err := rt.aiClient.Chat(ctx, messages, tools, "auto", 1200, true)
+		if err != nil {
+			return "", err
+		}
+		messages = append(messages, msg)
+		if len(msg.ToolCalls) == 0 {
+			if !readHTML {
+				messages = append(messages, service.AIMessage{Role: "user", Content: "你还没有调用任何阅读工具。请先调用 read_current_html，必要时再调用其他阅读工具，然后再发言。"})
+				continue
+			}
+			if round > 1 && !readHistory {
+				messages = append(messages, service.AIMessage{Role: "user", Content: "这是多轮圆桌。请先调用 read_all_rounds_context，读取当前修复申请内的历史轮次和用户反馈，然后再发言。"})
+				continue
+			}
+			if agent.Key == "api" && !readAPIDoc {
+				messages = append(messages, service.AIMessage{Role: "user", Content: "你是互动 API 守门员。必须先调用 read_interactive_api_doc，再判断互动 API 有没有问题。"})
+				continue
+			}
+			if agent.Key == "critic" && !readTranscript {
+				messages = append(messages, service.AIMessage{Role: "user", Content: "你是挑刺检查员。必须先调用 read_roundtable_transcript，读取前面角色发言后再挑刺。"})
+				continue
+			}
+			content := strings.TrimSpace(msg.Content)
+			if content == "" {
+				return "", fmt.Errorf("AI 没有返回发言")
+			}
+			return content, nil
+		}
+		for _, call := range msg.ToolCalls {
+			switch call.Function.Name {
+			case "read_current_html":
+				readHTML = true
+			case "read_all_rounds_context", "read_previous_context":
+				readHistory = true
+			case "read_interactive_api_doc":
+				readAPIDoc = true
+			case "read_roundtable_transcript":
+				readTranscript = true
+			}
+			result := executeRepairReadTool(call.Function.Name, call.Function.Arguments, source, apiDoc, allRoundsContext, transcript)
+			messages = append(messages, service.AIMessage{Role: "tool", ToolCallID: call.ID, Content: result})
+		}
+	}
+	return "", fmt.Errorf("AI 多次调用阅读工具后没有发言")
 }
 
 func (rt *Router) generateRepairAIReview(ctx context.Context, basePrompt, transcript, visible, fixed string) string {
@@ -606,6 +836,157 @@ func readReleaseHTML(publicPath, entryFile string) (string, error) {
 	}
 	return string(data), nil
 }
+
+func repairReadTools() []service.AITool {
+	stringParam := func(description string) map[string]any {
+		return map[string]any{"type": "string", "description": description}
+	}
+	return []service.AITool{
+		{
+			Type: "function",
+			Function: service.AIToolFunction{
+				Name:        "read_current_html",
+				Description: "Read the current entry HTML. Use mode=summary for overview, mode=search with query to locate code, or mode=full when the file is small enough.",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"mode":  stringParam("summary, search, or full"),
+						"query": stringParam("Keyword used when mode=search."),
+					},
+					"required": []string{"mode"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: service.AIToolFunction{
+				Name:        "read_interactive_api_doc",
+				Description: "Read the PlayPage interactive API document for this project.",
+				Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+		},
+		{
+			Type: "function",
+			Function: service.AIToolFunction{
+				Name:        "read_all_rounds_context",
+				Description: "Read all historical repair round contexts and user feedback for this repair request only. It does not include other repair requests of the same project.",
+				Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+		},
+		{
+			Type: "function",
+			Function: service.AIToolFunction{
+				Name:        "read_previous_context",
+				Description: "Compatibility alias for read_all_rounds_context.",
+				Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+		},
+		{
+			Type: "function",
+			Function: service.AIToolFunction{
+				Name:        "read_roundtable_transcript",
+				Description: "Read previous agents' discussion in this round.",
+				Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+		},
+	}
+}
+
+func executeRepairReadTool(name, rawArgs, source, apiDoc, allRoundsContext, transcript string) string {
+	switch name {
+	case "read_current_html":
+		var args struct {
+			Mode  string `json:"mode"`
+			Query string `json:"query"`
+		}
+		_ = json.Unmarshal([]byte(rawArgs), &args)
+		mode := strings.ToLower(strings.TrimSpace(args.Mode))
+		switch mode {
+		case "full":
+			return repairToolJSON(map[string]any{"ok": true, "content": trimMiddle(source, maxRepairPromptHTMLChars)})
+		case "search":
+			return repairToolJSON(map[string]any{"ok": true, "content": searchRepairHTML(source, args.Query)})
+		default:
+			return repairToolJSON(map[string]any{"ok": true, "content": summarizeRepairHTML(source)})
+		}
+	case "read_interactive_api_doc":
+		return repairToolJSON(map[string]any{"ok": true, "content": trimMiddle(apiDoc, 60000)})
+	case "read_all_rounds_context":
+		return repairToolJSON(map[string]any{"ok": true, "content": trimLimit(allRoundsContext, 40000)})
+	case "read_previous_context":
+		return repairToolJSON(map[string]any{"ok": true, "content": trimLimit(allRoundsContext, 40000)})
+	case "read_roundtable_transcript":
+		return repairToolJSON(map[string]any{"ok": true, "content": trimLimit(transcript, 12000)})
+	default:
+		return repairToolJSON(map[string]any{"ok": false, "error": "未知阅读工具"})
+	}
+}
+
+func repairToolJSON(value map[string]any) string {
+	data, _ := json.Marshal(value)
+	return string(data)
+}
+
+func summarizeRepairHTML(source string) string {
+	lines := strings.Split(strings.ReplaceAll(source, "\r\n", "\n"), "\n")
+	var hits []string
+	keywords := []string{"function ", "const ", "let ", "var ", "fetch(", "addEventListener", "onclick", "alert(", "API_BASE", "X-Project-Key"}
+	for i, line := range lines {
+		for _, keyword := range keywords {
+			if strings.Contains(line, keyword) {
+				hits = append(hits, fmt.Sprintf("%d: %s", i+1, strings.TrimSpace(line)))
+				break
+			}
+		}
+		if len(hits) >= 120 {
+			break
+		}
+	}
+	return trimLimit("HTML 总长度："+fmt.Sprint(len(source))+" 字符\n关键行：\n"+strings.Join(hits, "\n"), 20000)
+}
+
+func searchRepairHTML(source, query string) string {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return summarizeRepairHTML(source)
+	}
+	lines := strings.Split(strings.ReplaceAll(source, "\r\n", "\n"), "\n")
+	var chunks []string
+	lowerQuery := strings.ToLower(query)
+	for i, line := range lines {
+		if !strings.Contains(strings.ToLower(line), lowerQuery) {
+			continue
+		}
+		start := i - 8
+		if start < 0 {
+			start = 0
+		}
+		end := i + 9
+		if end > len(lines) {
+			end = len(lines)
+		}
+		var chunk []string
+		for j := start; j < end; j++ {
+			chunk = append(chunk, fmt.Sprintf("%d: %s", j+1, lines[j]))
+		}
+		chunks = append(chunks, strings.Join(chunk, "\n"))
+		if len(chunks) >= 5 {
+			break
+		}
+	}
+	if len(chunks) == 0 {
+		return "没有找到关键词：" + query
+	}
+	return trimLimit(strings.Join(chunks, "\n\n---\n\n"), 30000)
+}
+
+func basePromptWithoutLargeContext(basePrompt string) string {
+	if idx := strings.Index(basePrompt, "\n\n互动 API 文档："); idx >= 0 {
+		return basePrompt[:idx] + "\n\n大段 HTML、API 文档和当前修复申请内所有历史轮次上下文请通过工具读取。"
+	}
+	return trimLimit(basePrompt, 4000)
+}
+
 func (rt *Router) buildInteractiveDocForPrompt(ctx context.Context, project domain.Project) string {
 	access, found, err := rt.store.GetProjectPublicAccess(ctx, project.ID)
 	if err != nil || !found {
@@ -614,37 +995,60 @@ func (rt *Router) buildInteractiveDocForPrompt(ctx context.Context, project doma
 	cols, _ := rt.store.ListCollections(ctx, project.ID)
 	return buildInteractiveAPIDoc(project, access.PublicKey, cols)
 }
-func (rt *Router) feedbackWithPreviousRoundContext(ctx context.Context, previousJob domain.RepairAIJob, feedback string) string {
-	messages, _ := rt.store.ListRepairAIMessages(ctx, previousJob.ID)
-	var b strings.Builder
-	b.WriteString(feedback)
-	b.WriteString("\n\n上一轮圆桌记录：\n")
-	for _, m := range messages {
-		b.WriteString(m.AgentName + ": " + trimLimit(m.Content, 1200) + "\n")
+
+func (rt *Router) allRepairAIRoundContext(ctx context.Context, requestID, excludeJobID string) string {
+	jobs, err := rt.store.ListRepairAIJobs(ctx, requestID)
+	if err != nil {
+		log.Printf("list repair ai jobs failed: request_id=%s err=%v", requestID, err)
+		return "历史圆桌上下文读取失败。"
 	}
-	if previousJob.GeneratedHTML != "" {
-		b.WriteString("上一轮已经生成过 HTML。请在上一轮修复结果基础上，按照用户最新反馈继续修复。\n")
-		b.WriteString("上一轮生成 HTML 摘要/片段：\n")
-		b.WriteString(trimLimit(previousJob.GeneratedHTML, 12000))
+	var b strings.Builder
+	b.WriteString("以下内容只来自当前修复申请 ID=" + requestID + " 的历史圆桌，不包含同一作品的其他修复申请。\n\n")
+	written := 0
+	for _, job := range jobs {
+		if job.ID == excludeJobID {
+			continue
+		}
+		written++
+		b.WriteString(fmt.Sprintf("## 历史第 %d 轮\n", job.Round))
+		b.WriteString("状态：" + job.Status + "\n")
+		if job.Feedback != "" {
+			b.WriteString("该轮用户反馈/补充：" + trimLimit(job.Feedback, 2500) + "\n")
+		}
+		if job.ErrorMessage != "" {
+			b.WriteString("该轮错误信息：" + trimLimit(job.ErrorMessage, 1200) + "\n")
+		}
+		if job.PreviewURL != "" {
+			b.WriteString("该轮预览地址：" + job.PreviewURL + "\n")
+		}
+		messages, err := rt.store.ListRepairAIMessages(ctx, job.ID)
+		if err != nil {
+			b.WriteString("该轮消息读取失败。\n\n")
+			continue
+		}
+		b.WriteString("该轮圆桌消息：\n")
+		for _, m := range messages {
+			if strings.TrimSpace(m.Content) == "" {
+				continue
+			}
+			b.WriteString(fmt.Sprintf("- %s/%s：%s\n", m.AgentName, m.MessageType, trimLimit(m.Content, 1200)))
+		}
+		if job.GeneratedHTML != "" {
+			b.WriteString("该轮曾生成修复 HTML。后续轮次应理解其方向，但以当前发布版 HTML 为准继续修改。\n")
+			b.WriteString("该轮生成 HTML 摘要：\n")
+			b.WriteString(trimLimit(summarizeRepairHTML(job.GeneratedHTML), 6000))
+			b.WriteString("\n")
+		}
 		b.WriteString("\n")
 	}
-	return trimLimit(b.String(), 20000)
+	if written == 0 {
+		return "暂无历史圆桌轮次。"
+	}
+	return trimLimit(b.String(), 60000)
 }
 
 func (rt *Router) previousRepairAIMessages(ctx context.Context, requestID, excludeJobID string) string {
-	latest, found, _ := rt.store.GetLatestRepairAIJob(ctx, requestID)
-	if !found || latest.ID == excludeJobID {
-		return ""
-	}
-	messages, _ := rt.store.ListRepairAIMessages(ctx, latest.ID)
-	var b strings.Builder
-	for _, m := range messages {
-		b.WriteString(m.AgentName + ": " + m.Content + "\n")
-	}
-	if latest.GeneratedHTML != "" {
-		b.WriteString("上一轮已经生成过 HTML，用户反馈后需要在此基础上继续修复。\n")
-	}
-	return b.String()
+	return rt.allRepairAIRoundContext(ctx, requestID, excludeJobID)
 }
 
 type repairAIJSONResult struct {
@@ -875,9 +1279,84 @@ func applyRepairPatchHunk(source string, hunk []repairPatchLine) (string, error)
 		return "", fmt.Errorf("修改块缺少可匹配的原文")
 	}
 	if strings.Count(source, oldText) != 1 {
+		fixed, ok := applyRepairPatchHunkByAnchor(source, oldLines, newLines)
+		if ok {
+			return fixed, nil
+		}
 		return "", fmt.Errorf("补丁原文匹配次数不是 1，实际为 %d；请增加上下文或改用更精确的原文", strings.Count(source, oldText))
 	}
 	return strings.Replace(source, oldText, newText, 1), nil
+}
+
+func applyRepairPatchHunkByAnchor(source string, oldLines, newLines []string) (string, bool) {
+	if len(oldLines) == 0 {
+		return "", false
+	}
+	sourceLines := strings.Split(strings.ReplaceAll(source, "\r\n", "\n"), "\n")
+	if len(oldLines) > len(sourceLines) {
+		return "", false
+	}
+	oldBody := normalizePatchBlockWithBlankLines(oldLines)
+	matchStart := -1
+	matches := 0
+	for i := 0; i+len(oldLines) <= len(sourceLines); i++ {
+		window := sourceLines[i : i+len(oldLines)]
+		if normalizePatchBlockWithBlankLines(window) != oldBody {
+			continue
+		}
+		matchStart = i
+		matches++
+		if matches > 1 {
+			return "", false
+		}
+	}
+	if matches == 1 {
+		anchorStart := matchStart
+		anchorEnd := matchStart + len(oldLines) - 1
+		updated := append([]string{}, sourceLines[:anchorStart]...)
+		updated = append(updated, newLines...)
+		updated = append(updated, sourceLines[anchorEnd+1:]...)
+		return strings.Join(updated, "\n"), true
+	}
+	return "", false
+}
+
+func normalizePatchLine(line string) string {
+	line = strings.TrimSpace(line)
+	line = strings.ReplaceAll(line, "\t", " ")
+	line = regexp.MustCompile(`\s+`).ReplaceAllString(line, " ")
+	return line
+}
+
+func normalizePatchBlock(lines []string) string {
+	parts := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts = append(parts, normalizePatchLine(line))
+	}
+	return strings.Join(parts, "\n")
+}
+
+func normalizePatchBlockWithBlankLines(lines []string) string {
+	parts := make([]string, 0, len(lines))
+	for _, line := range lines {
+		parts = append(parts, normalizePatchLine(line))
+	}
+	return strings.Join(parts, "\n")
+}
+
+func summarizePatchFailure(value, errText string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 800 {
+		value = value[:800] + "…"
+	}
+	errText = strings.TrimSpace(errText)
+	if len(errText) > 300 {
+		errText = errText[:300] + "…"
+	}
+	return errText + "\n" + value
 }
 
 func splitPatchLines(value string) []string {
