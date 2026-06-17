@@ -470,6 +470,9 @@ func (rt *Router) generateAndApplyRepairPatch(ctx context.Context, job *domain.R
 	var visible string
 	const maxPatchAttempts = 8
 	for attempt := 1; ; attempt++ {
+		if attempt > 12 {
+			return "", "", fmt.Errorf("AI 连续多次生成不可应用的补丁，已停止自动重试。请叫停后交给管理员处理，或稍后重新启动圆桌")
+		}
 		if ctx.Err() != nil {
 			return "", "", ctx.Err()
 		}
@@ -575,6 +578,28 @@ func (rt *Router) generateRepairWithToolLoop(ctx context.Context, job *domain.Re
 			if strings.TrimSpace(msg.Content) == "" && finish == "tool_calls" {
 				return "", "", fmt.Errorf("AI 要求调用工具，但没有返回工具参数")
 			}
+			if patchText := extractApplyPatch(msg.Content); patchText != "" {
+				rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", fmt.Sprintf("修复员第 %d 轮没有正式调用工具，但输出了 apply_patch，后端直接尝试应用。", turn))
+				next, err := applyRepairAIPatch(current, patchText)
+				if err != nil {
+					result := map[string]any{
+						"ok":              false,
+						"error":           err.Error(),
+						"patch_summary":   trimLimit(patchText, 1200),
+						"source_context":  buildPatchFailureSourceContext(current, patchText),
+						"current_hint":    "你输出了补丁文本但没有调用 apply_patch 工具。请先读取 source_context 中的真实源码，再调用 apply_patch。",
+						"supported_files": []string{"index.html"},
+					}
+					data, _ := json.Marshal(result)
+					messages = append(messages, service.AIMessage{Role: "user", Content: "后端尝试应用你刚才输出的补丁失败。工具结果如下，请基于真实源码重试：\n" + string(data)})
+					rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", "直接应用补丁文本失败："+err.Error())
+					continue
+				}
+				current = next
+				messages = append(messages, service.AIMessage{Role: "user", Content: "后端已经成功应用你刚才输出的 apply_patch。你可以继续输出更多 apply_patch，或者输出最终 JSON：{\"visible_message\":\"...\",\"fixed_html\":\"...\"}。"})
+				rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", "后端已成功应用补丁文本。")
+				continue
+			}
 			v, htmlText, err := parseRepairAIResult(msg.Content)
 			if err == nil {
 				if v != "" {
@@ -618,7 +643,8 @@ func (rt *Router) generateRepairWithToolLoop(ctx context.Context, job *domain.Re
 					"ok":              false,
 					"error":           err.Error(),
 					"patch_summary":   trimLimit(args.Patch, 1200),
-					"current_hint":    "请基于当前入口 HTML 中真实存在的原文重新生成补丁。不要复用失败补丁。",
+					"source_context":  buildPatchFailureSourceContext(current, args.Patch),
+					"current_hint":    "请基于 source_context 中当前入口 HTML 真实存在的源码重新生成补丁。不要复用失败补丁。",
 					"supported_files": []string{"index.html"},
 				}
 				data, _ := json.Marshal(result)
@@ -629,12 +655,15 @@ func (rt *Router) generateRepairWithToolLoop(ctx context.Context, job *domain.Re
 			current = next
 			result := map[string]any{
 				"ok":           true,
-				"message":      "补丁已应用到当前 HTML。可以继续调用 apply_patch，或输出最终 JSON。",
+				"message":      "补丁已应用到当前 HTML。你可以继续调用 apply_patch，也可以直接停止工具循环。",
 				"current_html": trimMiddle(current, 30000),
 			}
 			data, _ := json.Marshal(result)
 			messages = append(messages, service.AIMessage{Role: "tool", ToolCallID: call.ID, Content: string(data)})
 			rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", "apply_patch 工具已成功应用补丁。")
+			if current != source {
+				return "AI 已通过 apply_patch 工具完成局部修复，请预览效果。", current, nil
+			}
 		}
 	}
 	if current != source {
@@ -1283,6 +1312,9 @@ func applyRepairPatchHunk(source string, hunk []repairPatchLine) (string, error)
 		if ok {
 			return fixed, nil
 		}
+		if fixed, ok := applyRepairPatchHunkByFunctionName(source, oldLines, newLines); ok {
+			return fixed, nil
+		}
 		return "", fmt.Errorf("补丁原文匹配次数不是 1，实际为 %d；请增加上下文或改用更精确的原文", strings.Count(source, oldText))
 	}
 	return strings.Replace(source, oldText, newText, 1), nil
@@ -1321,6 +1353,104 @@ func applyRepairPatchHunkByAnchor(source string, oldLines, newLines []string) (s
 	return "", false
 }
 
+func applyRepairPatchHunkByFunctionName(source string, oldLines, newLines []string) (string, bool) {
+	name := extractPatchFunctionName(oldLines)
+	if name == "" {
+		name = extractPatchFunctionName(newLines)
+	}
+	if name == "" {
+		return "", false
+	}
+	sourceLines := strings.Split(strings.ReplaceAll(source, "\r\n", "\n"), "\n")
+	start := findSourceFunctionStart(sourceLines, name)
+	if start < 0 {
+		return "", false
+	}
+	end := findSourceFunctionEnd(sourceLines, start)
+	if end < start {
+		return "", false
+	}
+	updated := append([]string{}, sourceLines[:start]...)
+	updated = append(updated, newLines...)
+	updated = append(updated, sourceLines[end+1:]...)
+	return strings.Join(updated, "\n"), true
+}
+
+func extractPatchFunctionName(lines []string) string {
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(line, "function "):
+			line = strings.TrimPrefix(line, "function ")
+		case strings.HasPrefix(line, "const "):
+			line = strings.TrimPrefix(line, "const ")
+		case strings.HasPrefix(line, "let "):
+			line = strings.TrimPrefix(line, "let ")
+		case strings.HasPrefix(line, "var "):
+			line = strings.TrimPrefix(line, "var ")
+		default:
+			continue
+		}
+		line = strings.TrimSpace(line)
+		if eq := strings.Index(line, "="); eq >= 0 {
+			line = strings.TrimSpace(line[:eq])
+		}
+		if paren := strings.Index(line, "("); paren >= 0 {
+			line = line[:paren]
+		}
+		line = strings.TrimSpace(line)
+		line = strings.Trim(line, ":{}")
+		if line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+func findSourceFunctionStart(lines []string, name string) int {
+	patterns := []string{
+		"function " + name,
+		"const " + name + " =",
+		"let " + name + " =",
+		"var " + name + " =",
+		"const " + name + ":",
+		"let " + name + ":",
+		"var " + name + ":",
+	}
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		for _, pattern := range patterns {
+			if strings.Contains(trimmed, pattern) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func findSourceFunctionEnd(lines []string, start int) int {
+	depth := 0
+	started := false
+	for i := start; i < len(lines); i++ {
+		line := lines[i]
+		for _, r := range line {
+			switch r {
+			case '{':
+				depth++
+				started = true
+			case '}':
+				if started {
+					depth--
+					if depth == 0 {
+						return i
+					}
+				}
+			}
+		}
+	}
+	return -1
+}
+
 func normalizePatchLine(line string) string {
 	line = strings.TrimSpace(line)
 	line = strings.ReplaceAll(line, "\t", " ")
@@ -1357,6 +1487,92 @@ func summarizePatchFailure(value, errText string) string {
 		errText = errText[:300] + "…"
 	}
 	return errText + "\n" + value
+}
+
+func buildPatchFailureSourceContext(source, patch string) string {
+	patch = strings.TrimSpace(patch)
+	if patch == "" {
+		return trimMiddle(source, 12000)
+	}
+	names := []string{}
+	for _, line := range strings.Split(patch, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "*** Update File:") {
+			continue
+		}
+		if strings.HasPrefix(line, "function ") || strings.HasPrefix(line, "const ") || strings.HasPrefix(line, "let ") || strings.HasPrefix(line, "var ") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				name := fields[1]
+				if idx := strings.Index(name, "("); idx > 0 {
+					name = name[:idx]
+				}
+				name = strings.Trim(name, "=:{")
+				if name != "" {
+					names = append(names, name)
+				}
+			}
+		}
+	}
+	if len(names) == 0 {
+		return trimMiddle(source, 12000)
+	}
+	var b strings.Builder
+	for _, name := range names {
+		ctx := findSourceFunctionContext(source, name)
+		if ctx == "" {
+			continue
+		}
+		b.WriteString("## ")
+		b.WriteString(name)
+		b.WriteString("\n")
+		b.WriteString(ctx)
+		b.WriteString("\n\n")
+	}
+	if b.Len() == 0 {
+		return trimMiddle(source, 12000)
+	}
+	return trimLimit(b.String(), 24000)
+}
+
+func findSourceFunctionContext(source, name string) string {
+	source = strings.ReplaceAll(source, "\r\n", "\n")
+	lines := strings.Split(source, "\n")
+	idx := -1
+	patterns := []string{
+		"function " + name,
+		"const " + name + " =",
+		"let " + name + " =",
+		"var " + name + " =",
+		name + "(",
+	}
+	for i, line := range lines {
+		for _, pattern := range patterns {
+			if strings.Contains(line, pattern) {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			break
+		}
+	}
+	if idx < 0 {
+		return ""
+	}
+	start := idx - 12
+	if start < 0 {
+		start = 0
+	}
+	end := idx + 40
+	if end > len(lines) {
+		end = len(lines)
+	}
+	var b strings.Builder
+	for i := start; i < end; i++ {
+		b.WriteString(fmt.Sprintf("%d: %s\n", i+1, lines[i]))
+	}
+	return trimLimit(b.String(), 12000)
 }
 
 func splitPatchLines(value string) []string {
