@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -102,6 +103,11 @@ JSON 字段：
 	} else {
 		fmt.Printf("finish_reason=%s tool_calls=%d\n", finish1b, len(msg1b.ToolCalls))
 		fmt.Printf("content:\n%s\n", trim(msg1b.Content, 12000))
+		if patch := extractPatchForProbe(msg1b.Content); patch != "" {
+			fmt.Printf("\nconverted patch head:\n%s\n", trim(patch, 3000))
+		} else {
+			fmt.Println("\nconverted patch head: <empty>")
+		}
 	}
 
 	if os.Getenv("PROBE_TOOLS") != "1" {
@@ -170,6 +176,54 @@ JSON 字段：
 	}
 }
 
+func extractPatchForProbe(content string) string {
+	raw := strings.TrimSpace(content)
+	var out struct {
+		Patch string `json:"patch"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err == nil {
+		patch := strings.TrimSpace(out.Patch)
+		if strings.Contains(patch, "*** Begin Patch") {
+			return patch
+		}
+		if converted := extractUnifiedDiffAsApplyPatchForProbe(patch); converted != "" {
+			return converted
+		}
+	}
+	return extractUnifiedDiffAsApplyPatchForProbe(content)
+}
+
+func extractUnifiedDiffAsApplyPatchForProbe(s string) string {
+	raw := strings.TrimSpace(s)
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	var hunks []string
+	inHunk := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "@@") {
+			inHunk = true
+			hunks = append(hunks, "@@")
+			continue
+		}
+		if !inHunk {
+			continue
+		}
+		if strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") {
+			continue
+		}
+		if line == "" {
+			hunks = append(hunks, " ")
+			continue
+		}
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-") {
+			hunks = append(hunks, line)
+		}
+	}
+	if len(hunks) == 0 {
+		return ""
+	}
+	return "*** Begin Patch\n*** Update File: index.html\n" + strings.Join(hunks, "\n") + "\n*** End Patch"
+}
+
 func fetchURL(u string) (string, error) {
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
@@ -228,12 +282,11 @@ func selectRelevantHTML(html string) string {
 		"function buyStock",
 		"function openDay",
 		"function restDay",
-		"const game",
-		"let game",
+		"const DEFAULT_STATE",
 	}
 	var b strings.Builder
 	for _, key := range keys {
-		part := around(html, key, 5500)
+		part := lineBlock(html, key, 80)
 		if part == "" {
 			continue
 		}
@@ -262,4 +315,32 @@ func around(s, key string, width int) string {
 		end = len(s)
 	}
 	return s[start:end]
+}
+
+func lineBlock(s, key string, radius int) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	idx := -1
+	for i, line := range lines {
+		if strings.Contains(line, key) {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return ""
+	}
+	start := idx - radius/2
+	if start < 0 {
+		start = 0
+	}
+	end := idx + radius/2
+	if end > len(lines) {
+		end = len(lines)
+	}
+	var b strings.Builder
+	for i := start; i < end; i++ {
+		b.WriteString(fmt.Sprintf("%d: %s\n", i+1, lines[i]))
+	}
+	return b.String()
 }

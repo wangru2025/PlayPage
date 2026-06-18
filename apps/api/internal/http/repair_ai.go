@@ -525,7 +525,14 @@ JSON 字段：
 				if patchVisible != "" {
 					visible = patchVisible
 				}
-				return visible, ensureRepairHTML(fixedHTML), nil
+				fixedHTML = ensureRepairHTML(fixedHTML)
+				if validation := validateRepairHTML(fixedHTML); validation != "" {
+					lastPatch = content
+					lastErr = fmt.Errorf("修复后校验失败：%s", validation)
+					rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", fmt.Sprintf("第 %d 次完整 HTML 校验失败：%s", attempt, validation))
+					continue
+				}
+				return visible, fixedHTML, nil
 			}
 		}
 		patchVisible, patchText, err := parseRepairAIPatchResult(content)
@@ -543,6 +550,12 @@ JSON 字段：
 		if err != nil {
 			lastErr = err
 			rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", fmt.Sprintf("第 %d 次补丁应用失败：%s", attempt, summarizePatchFailure(patchText, err.Error())))
+			continue
+		}
+		if validation := validateRepairHTML(fixed); validation != "" {
+			lastErr = fmt.Errorf("修复后校验失败：%s", validation)
+			lastPatch = patchText
+			rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", fmt.Sprintf("第 %d 次补丁已应用但校验失败：%s", attempt, validation))
 			continue
 		}
 		return visible, fixed, nil
@@ -656,16 +669,18 @@ func (rt *Router) generateRepairWithToolLoop(ctx context.Context, job *domain.Re
 				continue
 			}
 			current = next
+			validation := validateRepairHTML(current)
 			result := map[string]any{
-				"ok":           true,
-				"message":      "补丁已应用到当前 HTML。你可以继续调用 apply_patch，也可以直接停止工具循环。",
-				"current_html": trimMiddle(current, 30000),
+				"ok":         validation == "",
+				"message":    "补丁已应用到当前 HTML。请根据 validation 结果决定是否继续修复，最后输出最终 JSON。",
+				"validation": validation,
+				"html_hint":  trimMiddle(current, 24000),
 			}
 			data, _ := json.Marshal(result)
 			messages = append(messages, service.AIMessage{Role: "tool", ToolCallID: call.ID, Content: string(data)})
 			rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", "apply_patch 工具已成功应用补丁。")
-			if current != source {
-				return "AI 已通过 apply_patch 工具完成局部修复，请预览效果。", current, nil
+			if validation != "" {
+				rt.addAIMessage(ctx, job, "fixer", "修复员", "assistant", "status", "修复后校验发现风险："+validation)
 			}
 		}
 	}
@@ -1114,6 +1129,11 @@ func parseRepairAIPatchResult(content string) (string, string, error) {
 	if patch == "" {
 		patch = extractUnifiedDiffAsApplyPatch(content)
 	}
+	if patch != "" && !strings.Contains(patch, "*** Begin Patch") {
+		if converted := extractUnifiedDiffAsApplyPatch(patch); converted != "" {
+			patch = converted
+		}
+	}
 	if patch == "" {
 		return "", "", fmt.Errorf("缺少 patch")
 	}
@@ -1182,6 +1202,32 @@ func ensureRepairHTML(fixed string) string {
 		fixed = strings.Replace(fixed, "<head>", "<head><meta charset=\"utf-8\">", 1)
 	}
 	return fixed
+}
+
+func validateRepairHTML(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	lower := strings.ToLower(value)
+	if !strings.Contains(lower, "<html") {
+		return "修复结果不像完整 HTML，缺少 <html>。"
+	}
+	if !strings.Contains(lower, "<script") && strings.Contains(value, "function ") {
+		return "检测到 JavaScript 函数，但没有明确的 <script> 标签，可能破坏了 HTML 结构。"
+	}
+	lines := strings.Split(value, "\n")
+	for i := 0; i+1 < len(lines); i++ {
+		a := strings.TrimSpace(lines[i])
+		b := strings.TrimSpace(lines[i+1])
+		if a == "" || b == "" {
+			continue
+		}
+		if strings.HasSuffix(a, "\"") && strings.HasPrefix(b, "\"") {
+			return fmt.Sprintf("疑似 JavaScript 字符串拼接缺少 +，位置约第 %d 行：%s / %s", i+1, trimLimit(a, 120), trimLimit(b, 120))
+		}
+		if strings.HasSuffix(a, ")") && strings.HasPrefix(b, "\"") {
+			return fmt.Sprintf("疑似 JavaScript 表达式拼接缺少 +，位置约第 %d 行：%s / %s", i+1, trimLimit(a, 120), trimLimit(b, 120))
+		}
+	}
+	return ""
 }
 
 func parseRepairAIResult(content string) (string, string, error) {
