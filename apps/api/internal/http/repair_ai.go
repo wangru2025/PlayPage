@@ -430,6 +430,9 @@ patch 必须严格使用这种格式：
 - patch 里的旧文本必须来自“当前入口 HTML”里的原文，保证后端可以精确替换。
 - 每个 hunk 至少保留 1 到 3 行原文上下文。
 - 可以有多个 @@ hunk。
+- 不要用表层改动糊弄用户。比如只改标题、只加提示、只调初始值、只隐藏报错，通常不是合格修复。
+- 先判断用户问题对应的真实机制或代码路径，再做最小但有效的逻辑修复。改数值时必须说明并保持自洽，不能制造新的明显不合理结果。
+- 如果问题是可玩性、平衡性、流程体验、交互逻辑这类模糊问题，至少改动一个核心机制或关键交互路径，而不是只改静态文案。
 - 不要删除用户数据，不要删除互动 API key，不要把 API 地址改成其他域名。
 - 如果使用互动 API，严格按文档使用相对 API_BASE 和 X-Project-Key。
 - 不要引入需要构建的框架。
@@ -561,7 +564,7 @@ func (rt *Router) generateRepairWithToolLoop(ctx context.Context, job *domain.Re
 		if ctx.Err() != nil {
 			return "", "", ctx.Err()
 		}
-		msg, finish, err := rt.aiClient.Chat(ctx, messages, tools, "auto", 8000, true)
+		msg, finish, err := rt.aiClient.Chat(ctx, messages, tools, "auto", 8000, false)
 		if err != nil {
 			return "", "", err
 		}
@@ -757,7 +760,7 @@ func (rt *Router) generateRepairAISpeechWithTools(ctx context.Context, agent rep
 	readAPIDoc := false
 	readTranscript := false
 	for turn := 1; turn <= 6; turn++ {
-		msg, _, err := rt.aiClient.Chat(ctx, messages, tools, "auto", 1200, true)
+		msg, _, err := rt.aiClient.Chat(ctx, messages, tools, "auto", 1200, false)
 		if err != nil {
 			return "", err
 		}
@@ -1097,6 +1100,9 @@ func parseRepairAIPatchResult(content string) (string, string, error) {
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		patch := extractApplyPatch(content)
 		if patch == "" {
+			patch = extractUnifiedDiffAsApplyPatch(content)
+		}
+		if patch == "" {
 			return "", "", err
 		}
 		return "AI 没有按标准 JSON 返回，但我提取到了局部补丁。", patch, nil
@@ -1104,6 +1110,9 @@ func parseRepairAIPatchResult(content string) (string, string, error) {
 	patch := strings.TrimSpace(out.Patch)
 	if patch == "" {
 		patch = extractApplyPatch(content)
+	}
+	if patch == "" {
+		patch = extractUnifiedDiffAsApplyPatch(content)
 	}
 	if patch == "" {
 		return "", "", fmt.Errorf("缺少 patch")
@@ -1121,6 +1130,47 @@ func extractApplyPatch(s string) string {
 		return ""
 	}
 	return strings.TrimSpace(raw[start : end+len("*** End Patch")])
+}
+
+func extractUnifiedDiffAsApplyPatch(s string) string {
+	raw := strings.TrimSpace(s)
+	raw = stripCodeFence(raw, "diff")
+	raw = stripCodeFence(raw, "patch")
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	var hunks []string
+	inHunk := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "@@") {
+			inHunk = true
+			hunks = append(hunks, "@@")
+			continue
+		}
+		if !inHunk {
+			continue
+		}
+		if strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") {
+			continue
+		}
+		if strings.HasPrefix(line, "@@") {
+			hunks = append(hunks, "@@")
+			continue
+		}
+		if line == "" {
+			hunks = append(hunks, " ")
+			continue
+		}
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-") {
+			hunks = append(hunks, line)
+			continue
+		}
+		if strings.HasPrefix(line, "\\ No newline") {
+			continue
+		}
+	}
+	if len(hunks) == 0 {
+		return ""
+	}
+	return "*** Begin Patch\n*** Update File: index.html\n" + strings.Join(hunks, "\n") + "\n*** End Patch"
 }
 
 func ensureRepairHTML(fixed string) string {
