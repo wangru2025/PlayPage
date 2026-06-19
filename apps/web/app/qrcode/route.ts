@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const name = url.searchParams.get("name");
   if (!name || (name !== "wei.jpg" && name !== "zhifubao.jpg")) {
-    return new NextResponse("not found", { status: 404 });
+    return new NextResponse("没有找到这个二维码", { status: 404 });
   }
 
   const filePath = path.join(process.cwd(), "..", "..", "..", "qrcode", name);

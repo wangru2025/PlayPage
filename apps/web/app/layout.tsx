@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RouteBackProvider } from "./RouteBackProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +14,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <a className="skip-link" href="#main-content">
           {"跳到主要内容"}
         </a>
-        {children}
+        <RouteBackProvider>{children}</RouteBackProvider>
       </body>
     </html>
   );
