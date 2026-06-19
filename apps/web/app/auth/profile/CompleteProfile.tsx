@@ -22,8 +22,7 @@ const text = {
   needLogin: "请先登录，再设置公开名字。",
   needUsername: "请先填写公开名字。",
   saveOk: "已经设置好，正在继续。",
-  saveFail: "保存失败。",
-  backAuth: "返回登录页"
+  saveFail: "保存失败。"
 };
 
 export function CompleteProfile() {
@@ -90,11 +89,6 @@ export function CompleteProfile() {
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 10 }}>
-        <div>
-          <a className="button-secondary" href="/auth">
-            {text.backAuth}
-          </a>
-        </div>
         <h1 style={{ margin: 0, fontSize: "2.5rem" }}>{text.title}</h1>
         <p style={{ margin: 0, color: "var(--muted)" }}>{text.intro}</p>
       </header>

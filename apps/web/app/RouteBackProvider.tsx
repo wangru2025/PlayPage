@@ -58,6 +58,10 @@ function isAuthFlowPath(path: string): boolean {
   return normalized === "/auth" || normalized === "/auth/session" || normalized === "/auth/profile";
 }
 
+function isErrorFallbackPage(): boolean {
+  return document.querySelector("[data-route-back-source='error']") !== null;
+}
+
 function isUsefulBackTarget(target: BackTarget | null, currentPath: string): target is BackTarget {
   if (!target) {
     return false;
@@ -108,6 +112,11 @@ export function RouteBackProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const href = link.getAttribute("href") || "";
+      if (isErrorFallbackPage()) {
+        window.sessionStorage.removeItem(STORAGE_KEY);
+        setTarget(null);
+        return;
+      }
       if (link.dataset.routeBackIgnore === "true") {
         return;
       }

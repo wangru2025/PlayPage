@@ -39,7 +39,6 @@ export function RoundtableLogPage({ projectId, requestId }: Props) {
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 12 }}>
         <nav aria-label="圆桌聊天记录导航" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <a className="button-secondary" href={`/projects/${projectId}/repair/requests`}>返回修复申请</a>
           <a className="button-secondary" href={`/projects/${projectId}/repair/${requestId}/ai`}>进入 AI 圆桌页面</a>
         </nav>
         <h1 style={{ margin: 0, fontSize: "2.4rem" }}>圆桌聊天记录</h1>

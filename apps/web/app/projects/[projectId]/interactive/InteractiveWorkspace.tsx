@@ -52,7 +52,6 @@ type InteractiveDocResponse = {
 };
 
 const text = {
-  back: "返回作品列表",
   title: "互动功能",
   loading: "正在读取互动功能设置。",
   disabled: "这个作品还没有启用互动功能。",
@@ -232,11 +231,6 @@ export function InteractiveWorkspace({ projectId }: { projectId: string }) {
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 10 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <a className="button-secondary" href="/projects">
-            {text.back}
-          </a>
-        </div>
         <h1 style={{ margin: 0, fontSize: "2.5rem" }}>{text.title}</h1>
         {project ? <p style={{ margin: 0, color: "var(--muted)" }}>{text.path}{project.publicUrl}</p> : null}
       </header>

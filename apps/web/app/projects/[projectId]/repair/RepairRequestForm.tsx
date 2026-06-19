@@ -86,7 +86,6 @@ export function RepairRequestForm({ projectId }: Props) {
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 12 }}>
         <nav aria-label="修复申请页面导航" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <a className="button-secondary" href="/projects">回到我的作品</a>
           <a className="button-secondary" href={`/projects/${projectId}/repair/requests`}>查看修复申请</a>
           <a className="button-secondary" href="/projects/repair">查看活动说明</a>
         </nav>

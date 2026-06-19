@@ -1,7 +1,6 @@
 ﻿const text = {
   title: "AI 网页急救站",
   subtitle: "AI 写坏了？页面白屏、按钮失灵、互动功能报错，都可以提交给 PlayPage 帮你看看。",
-  back: "回到我的作品",
   cta: "去选择要修复的作品",
   scopeTitle: "可以申请修复的问题",
   ruleTitle: "活动规则",
@@ -33,9 +32,6 @@ export default function RepairActivityPage() {
     <main id="main-content" className="shell" style={{ padding: "32px 0 72px" }}>
       <section style={{ display: "grid", gap: 18 }}>
         <header className="panel" style={{ padding: 28, display: "grid", gap: 14 }}>
-          <div>
-            <a className="button-secondary" href="/projects">{text.back}</a>
-          </div>
           <p className="soft-badge" style={{ justifySelf: "start", margin: 0 }}>PlayPage 活动</p>
           <h1 style={{ margin: 0, fontSize: "2.6rem" }}>{text.title}</h1>
           <p style={{ margin: 0, color: "var(--muted)", maxWidth: 780 }}>{text.subtitle}</p>

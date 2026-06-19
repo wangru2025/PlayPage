@@ -2,7 +2,7 @@
 
 export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <main id="main-content" className="shell" style={{ padding: "48px 0 72px" }}>
+    <main id="main-content" className="shell" data-route-back-source="error" style={{ padding: "48px 0 72px" }}>
       <section className="panel" style={{ padding: 28, display: "grid", gap: 16 }}>
         <p className="soft-badge" style={{ margin: 0 }}>
           页面出错
@@ -20,7 +20,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
           <button className="button-primary" type="button" onClick={reset}>
             重新加载
           </button>
-          <a className="button-secondary" href="/projects">
+          <a className="button-secondary" href="/projects" data-route-back-ignore="true">
             回到我的作品
           </a>
         </div>

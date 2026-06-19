@@ -20,7 +20,6 @@ const plans = [
 const text = {
   title: "开通或升级套餐",
   intro: "先看清每个套餐的价格和权益，再选择支付方式继续付款。",
-  back: "回到个人中心",
   chooseMethod: "选择支付方式",
   next: "确定支付"
 };
@@ -32,11 +31,6 @@ export function UpgradePlans() {
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 10 }}>
-        <div>
-          <a className="button-secondary" href="/me">
-            {text.back}
-          </a>
-        </div>
         <h1 style={{ margin: 0, fontSize: "2.5rem" }}>{text.title}</h1>
         <p style={{ margin: 0, color: "var(--muted)" }}>{text.intro}</p>
       </header>

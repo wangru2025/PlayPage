@@ -32,7 +32,6 @@ type Step = "fill" | "publishing" | "done";
 const maxContentBytes = 10 * 1024 * 1024;
 
 const text = {
-  back: "返回作品列表",
   title: "创建作品",
   intro: "先填写作品信息，再选择上传方式。",
   updateTitle: "上传新版本",
@@ -305,11 +304,6 @@ export function CreateProjectFlow() {
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 10 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <a className="button-secondary" href="/projects">
-            {text.back}
-          </a>
-        </div>
         <h1 style={{ margin: 0, fontSize: "2.5rem" }}>{isUpdateMode ? text.updateTitle : text.title}</h1>
         <p style={{ margin: 0, color: "var(--muted)" }}>{isUpdateMode ? text.updateIntro : text.intro}</p>
       </header>

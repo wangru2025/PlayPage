@@ -61,8 +61,7 @@ const text = {
   saveFail: "保存失败。",
   signOut: "退出登录",
   signOutOk: "你已经退出登录。",
-  signOutFail: "退出登录失败。",
-  backProjects: "回到作品页"
+  signOutFail: "退出登录失败。"
 };
 
 function planLabel(planCode: string): string {
@@ -157,9 +156,6 @@ export function PersonalCenter() {
 
       <section className="panel" style={{ padding: 24, display: "grid", gap: 18 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <a className="button-secondary" href="/projects">
-            {text.backProjects}
-          </a>
           {user ? (
             <button className="button-ghost" type="button" disabled={isPending} onClick={() => startTransition(logout)}>
               {text.signOut}

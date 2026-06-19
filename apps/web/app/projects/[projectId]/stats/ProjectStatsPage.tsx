@@ -32,7 +32,6 @@ type ProjectStatsPageProps = {
 type StatusTone = "info" | "success" | "error";
 
 const text = {
-  back: "返回作品列表",
   title: "统计数据",
   intro: "这里可以查看这个作品的每日访问量和互动 API 请求统计。",
   from: "开始日期",
@@ -127,11 +126,6 @@ export function ProjectStatsPage({ projectId }: ProjectStatsPageProps) {
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 10 }}>
-        <div>
-          <a className="button-secondary" href="/projects">
-            {text.back}
-          </a>
-        </div>
         <h1 style={{ margin: 0, fontSize: "2.5rem" }}>{text.title}</h1>
         <p style={{ margin: 0, color: "var(--muted)" }}>{text.intro}</p>
         <div className="status" data-tone={statusTone === "info" ? undefined : statusTone} aria-live="polite">

@@ -28,7 +28,6 @@ const text = {
   submitOk: "开通请求已发送，等待人工审核。",
   submitFail: "提交开通请求失败。",
   needNote: "请先填写备注。",
-  back: "回到套餐介绍",
   submitting: "正在提交开通请求。",
   pendingExists: "你已经有一个待审核的升级申请，请不要重复提交。"
 };
@@ -102,11 +101,6 @@ export function UpgradePayment() {
       }}
     >
       <div style={{ padding: 28, display: "grid", gap: 18, overflowY: "auto" }}>
-        <div>
-          <a className="button-secondary" href="/me/upgrade">
-            {text.back}
-          </a>
-        </div>
         <div style={{ display: "grid", gap: 10, justifyItems: "center", textAlign: "center" }}>
           <h1 style={{ margin: 0, fontSize: "2.5rem" }}>{text.title}</h1>
           <p style={{ margin: 0, color: "var(--muted)", maxWidth: 680 }}>{text.intro}</p>

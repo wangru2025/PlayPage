@@ -20,7 +20,6 @@ const text = {
   projects: "作品管理",
   upgrades: "升级申请",
   repairs: "网页修复申请",
-  back: "返回个人中心",
   role: "角色",
   plan: "套餐",
   owner: "作者",
@@ -96,7 +95,6 @@ export function AdminConsole() {
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 14 }}>
-        <div><a className="button-secondary" href="/me">{text.back}</a></div>
         <h1 style={{ margin: 0, fontSize: "2.5rem" }}>{text.title}</h1>
         <p style={{ margin: 0, color: "var(--muted)" }}>{text.intro}</p>
         <nav aria-label="管理后台页面" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>

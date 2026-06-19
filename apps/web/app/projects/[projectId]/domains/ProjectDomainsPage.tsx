@@ -83,9 +83,6 @@ export function ProjectDomainsPage({ projectId }: Props) {
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 12 }}>
-        <nav aria-label="独立网址页面导航" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <a className="button-secondary" href="/projects">回到我的作品</a>
-        </nav>
         <h1 style={{ margin: 0, fontSize: "2.4rem" }}>申请独立网址</h1>
         <p style={{ margin: 0, color: "var(--muted)", maxWidth: 760 }}>
           你可以为作品申请一个类似 https://my-game.wangru.net 的短网址。申请后需要管理员人工审核。

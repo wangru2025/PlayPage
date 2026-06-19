@@ -1,6 +1,6 @@
 export default function NotFound() {
   return (
-    <main id="main-content" className="shell" style={{ padding: "48px 0 72px" }}>
+    <main id="main-content" className="shell" data-route-back-source="error" style={{ padding: "48px 0 72px" }}>
       <section className="panel" style={{ padding: 28, display: "grid", gap: 16 }}>
         <p className="soft-badge" style={{ margin: 0 }}>
           404
@@ -10,10 +10,10 @@ export default function NotFound() {
           这个地址可能写错了，也可能页面已经被移动或删除。
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <a className="button-primary" href="/projects">
+          <a className="button-primary" href="/projects" data-route-back-ignore="true">
             回到我的作品
           </a>
-          <a className="button-secondary" href="/square">
+          <a className="button-secondary" href="/square" data-route-back-ignore="true">
             去作品广场
           </a>
         </div>

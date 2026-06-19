@@ -35,8 +35,7 @@ const text = {
   verifyFail: "登录失败。",
   needEmail: "请先填写邮箱。",
   needUsername: "请先填写公开名字。",
-  needCode: "请先填写验证码。",
-  backHome: "回到首页"
+  needCode: "请先填写验证码。"
 };
 
 export function AuthGate() {
@@ -130,11 +129,6 @@ export function AuthGate() {
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 10 }}>
-        <div>
-          <a className="button-secondary" href="/">
-            {text.backHome}
-          </a>
-        </div>
         <h1 style={{ margin: 0, fontSize: "2.5rem" }}>{text.title}</h1>
       </header>
 
