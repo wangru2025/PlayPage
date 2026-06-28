@@ -231,7 +231,7 @@ public sealed class MainActivity : Activity
     private async System.Threading.Tasks.Task ShowRepairRequestsAsync(ProjectSummary project)
     {
         var repairs = await _client.ListRepairRequestsAsync(project.Id);
-        ShowMessage("修复申请", repairs.Count == 0 ? "暂无修复申请。" : string.Join("\n\n", repairs.ConvertAll(r => $"{r.Status}\n{r.Description}")));
+        ShowMessage("修复申请", repairs.Count == 0 ? "暂无修复申请。" : string.Join("\n\n", repairs.Select(r => $"{r.Status}\n{r.Description}")));
     }
 
     private async System.Threading.Tasks.Task StartOrShowRepairAIAsync(ProjectSummary project)
@@ -304,4 +304,5 @@ public sealed class MainActivity : Activity
         _status.SendAccessibilityEvent(global::Android.Views.Accessibility.EventTypes.Announcement);
     }
 }
+
 
