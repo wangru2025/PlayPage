@@ -124,6 +124,9 @@ public sealed partial class MainActivity
             }
             try
             {
+                // 发送验证码只禁用发送按钮，邮箱和验证码输入框必须保持可编辑。
+                email.Enabled = true;
+                code.Enabled = true;
                 sendCode.Enabled = false;
                 status.Text = "正在发送验证码。";
                 var response = await _client.RequestCodeAsync(emailText);
@@ -134,6 +137,8 @@ public sealed partial class MainActivity
             catch (System.Exception ex)
             {
                 status.Text = "发送验证码失败：" + ex.Message;
+                email.Enabled = true;
+                code.Enabled = true;
                 sendCode.Enabled = true;
                 Toast.MakeText(this, ex.Message, ToastLength.Long)?.Show();
             }

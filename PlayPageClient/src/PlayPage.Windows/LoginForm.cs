@@ -109,7 +109,7 @@ public sealed class LoginForm : Form
 
         try
         {
-            SetBusy(true, "正在发送验证码。");
+            SetSendingCodeBusy(true, "正在发送验证码。");
             var response = await _client.RequestCodeAsync(email);
             StartCountdown(60);
             SetStatus($"验证码已经发送到 {response.Email}，请查看邮箱。", false);
@@ -123,7 +123,7 @@ public sealed class LoginForm : Form
         }
         finally
         {
-            _login.Enabled = true;
+            SetSendingCodeBusy(false, _status.Text);
         }
     }
 
@@ -164,6 +164,16 @@ public sealed class LoginForm : Form
         _email.Enabled = !busy;
         _code.Enabled = !busy;
         _login.Enabled = !busy;
+        _sendCode.Enabled = !busy && _resendSeconds <= 0;
+        SetStatus(status, false);
+    }
+
+    private void SetSendingCodeBusy(bool busy, string status)
+    {
+        // 发送验证码时只能锁发送按钮，不能锁验证码输入框；否则用户收到邮件后无法输入验证码。
+        _email.Enabled = true;
+        _code.Enabled = true;
+        _login.Enabled = true;
         _sendCode.Enabled = !busy && _resendSeconds <= 0;
         SetStatus(status, false);
     }
