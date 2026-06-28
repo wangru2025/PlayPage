@@ -61,6 +61,7 @@ public sealed partial class MainForm : Form
         projectMenu.DropDownItems.Add("查看独立网址申请(&W)", null, async (_, _) => await ShowDomainsAsync());
         projectMenu.DropDownItems.Add("查看历史版本(&H)", null, async (_, _) => await ShowReleasesAsync());
         projectMenu.DropDownItems.Add("统计数据(&T)", null, async (_, _) => await ShowStatsAsync());
+        projectMenu.DropDownItems.Add("管理互动数据(&M)", null, async (_, _) => await ManageInteractiveDataAsync());
         projectMenu.DropDownItems.Add("导出数据表(&E)", null, async (_, _) => await ExportDataAsync());
 
         var adminMenu = new ToolStripMenuItem("管理(&A)");
@@ -157,6 +158,7 @@ public sealed partial class MainForm : Form
         menu.Items.Add("更多：独立网址", null, async (_, _) => await ShowDomainsAsync());
         menu.Items.Add("更多：历史版本", null, async (_, _) => await ShowReleasesAsync());
         menu.Items.Add("更多：统计数据", null, async (_, _) => await ShowStatsAsync());
+        menu.Items.Add("更多：管理互动数据", null, async (_, _) => await ManageInteractiveDataAsync());
         menu.Items.Add("更多：导出数据表", null, async (_, _) => await ExportDataAsync());
         _projects.ContextMenuStrip = menu;
     }

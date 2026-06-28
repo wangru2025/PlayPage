@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using Android.App;
 using Android.Content;
 using Android.Database;
@@ -21,7 +24,7 @@ public sealed partial class MainActivity
     {
         if (position < 0 || position >= _projectItems.Count) return;
         var project = _projectItems[position];
-        var actions = new[] { "打开作品", "查看详情", "作品设置", "切换广场显示", "上传新版本", "下载作品源码", "导出数据表", "申请修复", "查看修复申请", "AI 圆桌", "申请独立网址", "查看独立网址", "查看历史版本", "统计数据" };
+        var actions = new[] { "打开作品", "查看详情", "作品设置", "切换广场显示", "上传新版本", "下载作品源码", "管理互动数据", "导出数据表", "申请修复", "查看修复申请", "AI 圆桌", "申请独立网址", "查看独立网址", "查看历史版本", "统计数据" };
         new AlertDialog.Builder(this)
             .SetTitle(project.Name)
             .SetItems(actions, async (_, args) =>
@@ -38,38 +41,43 @@ public sealed partial class MainActivity
                             ShowMessage("作品详情", $"地址：{detail.Project.PublicUrl}\n互动：{detail.Project.Interactive}\n统计：{detail.Project.AnalyticsEnabled}\n可见性：{detail.Project.Visibility}");
                             break;
                         case 2:
+                            await EditSettingsAsync(project);
+                            break;
+                        case 3:
                             await _client.UpdateProjectVisibilityAsync(project.Id, project.Visibility == "public" ? "unlisted" : "public");
                             await LoadProjectsAsync();
                             break;
-                        case 3:
+                        case 4:
                             PickReleaseFile(project);
                             break;
-                        case 4:
+                        case 5:
                             await DownloadSourceAsync(project);
                             break;
-                        case 5:
-                            await ExportDataAsync(project);
-                            break;
                         case 6:
-                            await CreateRepairAsync(project);
+                            await ManageInteractiveDataAsync(project);
                             break;
                         case 7:
-                            await ShowRepairRequestsAsync(project);
+                            await ExportDataAsync(project);
                             break;
                         case 8:
-                            await StartOrShowRepairAIAsync(project);
+                            await CreateRepairAsync(project);
                             break;
                         case 9:
-                            await CreateDomainAsync(project);
+                            await ShowRepairRequestsAsync(project);
                             break;
                         case 10:
-                            await ShowDomainsAsync(project);
+                            await StartOrShowRepairAIAsync(project);
                             break;
                         case 11:
-                            var releases = await _client.ListReleasesAsync(project.Id);
-                            ShowMessage("历史版本", releases.Count == 0 ? "暂无历史版本。" : $"共有 {releases.Count} 个版本。");
+                            await CreateDomainAsync(project);
                             break;
                         case 12:
+                            await ShowDomainsAsync(project);
+                            break;
+                        case 13:
+                            await ShowReleasesAsync(project);
+                            break;
+                        case 14:
                             var stats = await _client.GetProjectStatsAsync(project.Id);
                             ShowMessage("统计数据", $"访问量：{stats.TotalPageViews}\nAPI 请求：{stats.TotalApiRequests}\n成功：{stats.TotalApiSuccesses}\n失败：{stats.TotalApiFailures}");
                             break;
@@ -448,6 +456,131 @@ public sealed partial class MainActivity
             })
             .SetNegativeButton("关闭", (_, _) => { })
             .Show();
+    }
+
+    private static readonly JsonSerializerOptions InteractiveJsonOptions = new JsonSerializerOptions
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
+
+    private async System.Threading.Tasks.Task ManageInteractiveDataAsync(ProjectSummary project)
+    {
+        if (!project.Interactive)
+        {
+            ShowMessage("管理互动数据", "这个作品没有开启互动功能。可以先在作品设置里开启互动功能。");
+            return;
+        }
+        var collections = await _client.ListCollectionsAsync(project.Id);
+        var actions = collections.Select(c => $"{c.Name}（{c.Fields.Count} 个字段）").Concat(new[] { "新建数据集合" }).ToArray();
+        new AlertDialog.Builder(this)
+            .SetTitle("管理互动数据")
+            .SetItems(actions, async (_, args) =>
+            {
+                try
+                {
+                    if (args.Which == collections.Count) await CreateCollectionFromJsonAsync(project);
+                    else await ShowCollectionActionsAsync(project, collections[args.Which]);
+                }
+                catch (System.Exception ex) { ShowError(ex); }
+            })
+            .SetNegativeButton("关闭", (_, _) => { })
+            .Show();
+    }
+
+    private System.Threading.Tasks.Task ShowCollectionActionsAsync(ProjectSummary project, CollectionInfo collection)
+    {
+        var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+        var actions = new[] { "查看集合结构", "修改集合结构", "查看记录", "新增记录" };
+        new AlertDialog.Builder(this)
+            .SetTitle(collection.Name)
+            .SetItems(actions, async (_, args) =>
+            {
+                try
+                {
+                    switch (args.Which)
+                    {
+                        case 0:
+                            ShowMessage("集合结构", JsonSerializer.Serialize(collection, InteractiveJsonOptions));
+                            break;
+                        case 1:
+                            await UpdateCollectionFromJsonAsync(project, collection);
+                            break;
+                        case 2:
+                            await ShowRecordsAsync(project, collection);
+                            break;
+                        case 3:
+                            await CreateRecordFromJsonAsync(project, collection);
+                            break;
+                    }
+                }
+                catch (System.Exception ex) { ShowError(ex); }
+                finally { tcs.TrySetResult(true); }
+            })
+            .SetNegativeButton("返回", (_, _) => tcs.TrySetResult(false))
+            .Show();
+        return tcs.Task;
+    }
+
+    private async System.Threading.Tasks.Task CreateCollectionFromJsonAsync(ProjectSummary project)
+    {
+        var preset = "{\n  \"name\": \"messages\",\n  \"permissions\": { \"publicRead\": true, \"publicWrite\": true },\n  \"fields\": [\n    { \"name\": \"nickname\", \"type\": \"string\", \"required\": true, \"isList\": false },\n    { \"name\": \"content\", \"type\": \"text\", \"required\": true, \"isList\": false }\n  ]\n}";
+        var json = await PromptMultilineAsync("新建数据集合", "集合 JSON", preset);
+        if (string.IsNullOrWhiteSpace(json)) return;
+        var request = JsonSerializer.Deserialize<CollectionCreateRequest>(json, InteractiveJsonOptions);
+        if (request == null || string.IsNullOrWhiteSpace(request.Name)) { ShowMessage("新建数据集合", "JSON 里必须包含 name。"); return; }
+        await _client.CreateCollectionAsync(project.Id, request);
+        SetStatus("数据集合已创建。 ");
+    }
+
+    private async System.Threading.Tasks.Task UpdateCollectionFromJsonAsync(ProjectSummary project, CollectionInfo collection)
+    {
+        var preset = JsonSerializer.Serialize(new CollectionUpdateRequest { Permissions = collection.Permissions, Fields = collection.Fields }, InteractiveJsonOptions);
+        var json = await PromptMultilineAsync("修改集合结构", "permissions 和 fields JSON", preset);
+        if (string.IsNullOrWhiteSpace(json)) return;
+        var request = JsonSerializer.Deserialize<CollectionUpdateRequest>(json, InteractiveJsonOptions);
+        if (request == null) { ShowMessage("修改集合结构", "JSON 格式无效。"); return; }
+        await _client.UpdateCollectionAsync(project.Id, collection.Name, request);
+        SetStatus("集合结构已保存。 ");
+    }
+
+    private async System.Threading.Tasks.Task ShowRecordsAsync(ProjectSummary project, CollectionInfo collection)
+    {
+        var records = await _client.ListRecordsAsync(project.Id, collection.Name);
+        if (records.Count == 0) { ShowMessage("记录", "这个集合还没有记录。"); return; }
+        var text = string.Join("\n\n", records.Take(30).Select(r => $"ID：{r.Id}\n状态：{r.Status}\n创建：{r.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}\n数据：{JsonSerializer.Serialize(r.Data, InteractiveJsonOptions)}"));
+        if (records.Count > 30) text += $"\n\n只显示前 30 条，共 {records.Count} 条。";
+        ShowMessage("记录 - " + collection.Name, text);
+    }
+
+    private async System.Threading.Tasks.Task CreateRecordFromJsonAsync(ProjectSummary project, CollectionInfo collection)
+    {
+        var json = await PromptMultilineAsync("新增记录", "data JSON，不要外包 data", "{\n  \"nickname\": \"访客\",\n  \"content\": \"你好，PlayPage！\"\n}");
+        if (string.IsNullOrWhiteSpace(json)) return;
+        var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(json, InteractiveJsonOptions);
+        if (data == null) { ShowMessage("新增记录", "JSON 格式无效。"); return; }
+        await _client.CreateRecordAsync(project.Id, collection.Name, data);
+        SetStatus("记录已新增。 ");
+    }
+
+    private System.Threading.Tasks.Task<string> PromptMultilineAsync(string title, string hint, string initialText)
+    {
+        var tcs = new System.Threading.Tasks.TaskCompletionSource<string>();
+        var input = new EditText(this) { Hint = hint, Text = initialText };
+        input.ContentDescription = hint;
+        input.SetMinLines(8);
+        input.SetSingleLine(false);
+        input.InputType = InputTypes.ClassText | InputTypes.TextFlagMultiLine | InputTypes.TextFlagNoSuggestions;
+        input.SetHorizontallyScrolling(false);
+        new AlertDialog.Builder(this)
+            .SetTitle(title)
+            .SetView(input)
+            .SetPositiveButton("确定", (_, _) => tcs.TrySetResult(input.Text ?? ""))
+            .SetNegativeButton("取消", (_, _) => tcs.TrySetResult(""))
+            .Show();
+        return tcs.Task;
     }
 
     private async System.Threading.Tasks.Task DownloadSourceAsync(ProjectSummary project)

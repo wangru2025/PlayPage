@@ -179,6 +179,20 @@ public sealed partial class MainForm
         MessageBox.Show(this, $"访问量：{stats.TotalPageViews}\nAPI 请求：{stats.TotalApiRequests}\n成功：{stats.TotalApiSuccesses}\n失败：{stats.TotalApiFailures}\n成功率：{stats.ApiSuccessRate:P2}", "统计数据");
     }
 
+    private async Task ManageInteractiveDataAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        if (!p.Interactive)
+        {
+            MessageBox.Show(this, "这个作品没有开启互动功能。可以先在作品设置里开启互动功能。", "管理互动数据", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        using var form = new InteractiveDataForm(_client, p);
+        form.ShowDialog(this);
+        await Task.CompletedTask;
+    }
+
     private async Task ExportDataAsync()
     {
         var p = SelectedProject();
