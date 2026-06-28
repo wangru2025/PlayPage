@@ -72,6 +72,32 @@ public sealed class MainActivity : Activity
         SetContentView(root);
     }
 
+    public override bool OnCreateOptionsMenu(IMenu? menu)
+    {
+        if (menu == null) return base.OnCreateOptionsMenu(menu);
+        menu.Add("新建作品");
+        menu.Add("模板市场");
+        menu.Add("管理摘要");
+        return true;
+    }
+
+    public override bool OnOptionsItemSelected(IMenuItem item)
+    {
+        _ = HandleMenuAsync(item.TitleFormatted?.ToString() ?? item.TitleCondensedFormatted?.ToString() ?? "");
+        return true;
+    }
+
+    private async System.Threading.Tasks.Task HandleMenuAsync(string title)
+    {
+        try
+        {
+            if (title == "新建作品") await CreateProjectAsync();
+            else if (title == "模板市场") await ShowTemplatesAsync();
+            else if (title == "管理摘要") await ShowAdminSummaryAsync();
+        }
+        catch (System.Exception ex) { ShowError(ex); }
+    }
+
     private async System.Threading.Tasks.Task SendCodeAsync()
     {
         try
@@ -119,7 +145,7 @@ public sealed class MainActivity : Activity
     {
         if (position < 0 || position >= _projectItems.Count) return;
         var project = _projectItems[position];
-        var actions = new[] { "打开作品", "查看详情", "切换广场显示", "查看修复申请", "查看独立网址", "查看历史版本" };
+        var actions = new[] { "打开作品", "查看详情", "切换广场显示", "申请修复", "查看修复申请", "AI 圆桌", "申请独立网址", "查看独立网址", "查看历史版本", "统计数据" };
         new AlertDialog.Builder(this)
             .SetTitle(project.Name)
             .SetItems(actions, async (_, args) =>
@@ -140,22 +166,126 @@ public sealed class MainActivity : Activity
                             await LoadProjectsAsync();
                             break;
                         case 3:
-                            var repairs = await _client.ListRepairRequestsAsync(project.Id);
-                            ShowMessage("修复申请", repairs.Count == 0 ? "暂无修复申请。" : $"共有 {repairs.Count} 条修复申请。");
+                            await CreateRepairAsync(project);
                             break;
                         case 4:
-                            var domains = await _client.ListDomainsAsync(project.Id);
-                            ShowMessage("独立网址", domains.Count == 0 ? "暂无独立网址申请。" : $"共有 {domains.Count} 条独立网址申请。");
+                            await ShowRepairRequestsAsync(project);
                             break;
                         case 5:
+                            await StartOrShowRepairAIAsync(project);
+                            break;
+                        case 6:
+                            await CreateDomainAsync(project);
+                            break;
+                        case 7:
+                            await ShowDomainsAsync(project);
+                            break;
+                        case 8:
                             var releases = await _client.ListReleasesAsync(project.Id);
                             ShowMessage("历史版本", releases.Count == 0 ? "暂无历史版本。" : $"共有 {releases.Count} 个版本。");
+                            break;
+                        case 9:
+                            var stats = await _client.GetProjectStatsAsync(project.Id);
+                            ShowMessage("统计数据", $"访问量：{stats.TotalPageViews}\nAPI 请求：{stats.TotalApiRequests}\n成功：{stats.TotalApiSuccesses}\n失败：{stats.TotalApiFailures}");
                             break;
                     }
                 }
                 catch (System.Exception ex) { ShowError(ex); }
             })
             .Show();
+    }
+
+    private async System.Threading.Tasks.Task CreateProjectAsync()
+    {
+        var name = await PromptAsync("新建作品", "作品名称");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var slug = await PromptAsync("新建作品", "作品链接名，可留空");
+        await _client.CreateProjectAsync(new ProjectCreateRequest { Name = name, Slug = slug, Interactive = true, AnalyticsEnabled = false });
+        await LoadProjectsAsync();
+    }
+
+    private async System.Threading.Tasks.Task ShowTemplatesAsync()
+    {
+        var items = await _client.ListTemplatesAsync();
+        var text = items.Count == 0 ? "暂无模板。" : string.Join("\n", items.ConvertAll(t => $"{t.Name} - {t.Summary}"));
+        ShowMessage("模板市场", text);
+    }
+
+    private async System.Threading.Tasks.Task ShowAdminSummaryAsync()
+    {
+        var users = await _client.AdminListUsersAsync();
+        var projects = await _client.AdminListProjectsAsync();
+        var repairs = await _client.AdminListRepairRequestsAsync();
+        ShowMessage("管理摘要", $"用户：{users.Count}\n作品：{projects.Count}\n修复申请：{repairs.Count}");
+    }
+
+    private async System.Threading.Tasks.Task CreateRepairAsync(ProjectSummary project)
+    {
+        var desc = await PromptAsync("申请修复", "请描述遇到的问题");
+        if (string.IsNullOrWhiteSpace(desc)) return;
+        await _client.CreateRepairRequestAsync(project.Id, new RepairRequestCreateRequest { IssueType = "other", Description = desc, AllowAdminEdit = true, Contact = _email?.Text ?? "" });
+        SetStatus("修复申请已提交。");
+    }
+
+    private async System.Threading.Tasks.Task ShowRepairRequestsAsync(ProjectSummary project)
+    {
+        var repairs = await _client.ListRepairRequestsAsync(project.Id);
+        ShowMessage("修复申请", repairs.Count == 0 ? "暂无修复申请。" : string.Join("\n\n", repairs.ConvertAll(r => $"{r.Status}\n{r.Description}")));
+    }
+
+    private async System.Threading.Tasks.Task StartOrShowRepairAIAsync(ProjectSummary project)
+    {
+        var repairs = await _client.ListRepairRequestsAsync(project.Id);
+        if (repairs.Count == 0) { ShowMessage("AI 圆桌", "这个作品还没有修复申请。"); return; }
+        try
+        {
+            var state = await _client.GetLatestRepairAIAsync(project.Id, repairs[0].Id);
+            ShowAIState(state);
+        }
+        catch
+        {
+            var state = await _client.StartRepairAIAsync(project.Id, repairs[0].Id);
+            ShowAIState(state);
+        }
+    }
+
+    private async System.Threading.Tasks.Task CreateDomainAsync(ProjectSummary project)
+    {
+        var subdomain = await PromptAsync("申请独立网址", "子域名，例如 my-game");
+        if (string.IsNullOrWhiteSpace(subdomain)) return;
+        var created = await _client.CreateDomainRequestAsync(project.Id, subdomain);
+        SetStatus("独立网址申请已提交：" + created.Domain);
+    }
+
+    private async System.Threading.Tasks.Task ShowDomainsAsync(ProjectSummary project)
+    {
+        var domains = await _client.ListDomainsAsync(project.Id);
+        ShowMessage("独立网址", domains.Count == 0 ? "暂无独立网址申请。" : string.Join("\n", domains.ConvertAll(d => $"{d.Domain} - {d.Status}")));
+    }
+
+    private void ShowAIState(RepairAIState state)
+    {
+        var lines = new System.Collections.Generic.List<string> { $"状态：{state.Job.Status}；第 {state.Job.Round} 轮" };
+        foreach (var message in state.Messages)
+        {
+            lines.Add($"{message.MessageSeq}. {message.AgentName}");
+            lines.Add(message.Content);
+        }
+        ShowMessage("AI 圆桌", string.Join("\n", lines));
+    }
+
+    private System.Threading.Tasks.Task<string> PromptAsync(string title, string hint)
+    {
+        var tcs = new System.Threading.Tasks.TaskCompletionSource<string>();
+        var input = new EditText(this) { Hint = hint };
+        input.ContentDescription = hint;
+        new AlertDialog.Builder(this)
+            .SetTitle(title)
+            .SetView(input)
+            .SetPositiveButton("确定", (_, _) => tcs.TrySetResult(input.Text ?? ""))
+            .SetNegativeButton("取消", (_, _) => tcs.TrySetResult(""))
+            .Show();
+        return tcs.Task;
     }
 
     private void ShowMessage(string title, string message) => new AlertDialog.Builder(this).SetTitle(title).SetMessage(message).SetPositiveButton("确定", (_, _) => { }).Show();
