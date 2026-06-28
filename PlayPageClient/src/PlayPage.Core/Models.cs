@@ -350,7 +350,20 @@ public sealed class ListEnvelope<T>
     public List<T> Items { get; set; } = new List<T>();
 }
 
+public sealed class DataExportRequest
+{
+    public List<string> Collections { get; set; } = new List<string>();
+    public string Format { get; set; } = "json";
+}
+
+public sealed class DownloadedFile
+{
+    public string FileName { get; set; } = "download";
+    public string ContentType { get; set; } = "application/octet-stream";
+    public byte[] Content { get; set; } = Array.Empty<byte>();
+}
 public sealed class StatusEnvelope
 {
     public string Status { get; set; } = "";
 }
+

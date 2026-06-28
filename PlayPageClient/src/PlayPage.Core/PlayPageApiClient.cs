@@ -63,6 +63,9 @@ public sealed class PlayPageApiClient
         SendJsonAsync<ReleaseInfo>(HttpMethod.Post, ProjectPath(projectId, "releases") + "?mode=template", request, cancellationToken);
 
     public Task<string> GetInteractiveDocAsync(string projectId, CancellationToken cancellationToken = default) => SendTextAsync(HttpMethod.Get, ProjectPath(projectId, "interactive-doc"), cancellationToken);
+    public Task<DownloadedFile> DownloadProjectSourceAsync(string projectId, CancellationToken cancellationToken = default) => SendFileAsync(HttpMethod.Get, ProjectPath(projectId, "source"), cancellationToken);
+    public Task<DownloadedFile> ExportProjectDataAsync(string projectId, IReadOnlyList<string> collections, string format, CancellationToken cancellationToken = default) =>
+        SendJsonFileAsync(HttpMethod.Post, ProjectPath(projectId, "data-export"), new DataExportRequest { Collections = new List<string>(collections), Format = format }, cancellationToken);
     public Task<ProjectStatsSummary> GetProjectStatsAsync(string projectId, string from = "", string to = "", CancellationToken cancellationToken = default)
     {
         var query = new List<string>();
@@ -107,6 +110,12 @@ public sealed class PlayPageApiClient
         return await SendAsync<T>(method, path, cancellationToken, content).ConfigureAwait(false);
     }
 
+    private async Task<DownloadedFile> SendJsonFileAsync(HttpMethod method, string path, object body, CancellationToken cancellationToken)
+    {
+        using var content = new StringContent(JsonSerializer.Serialize(body, _jsonOptions), Encoding.UTF8, "application/json");
+        return await SendFileAsync(method, path, cancellationToken, content).ConfigureAwait(false);
+    }
+
     private async Task<T> SendAsync<T>(HttpMethod method, string path, CancellationToken cancellationToken, HttpContent? content = null)
     {
         var text = await SendTextAsync(method, path, cancellationToken, content).ConfigureAwait(false);
@@ -129,6 +138,48 @@ public sealed class PlayPageApiClient
             throw new PlayPageApiException(message, response.StatusCode);
         }
         return text;
+    }
+
+    private async Task<DownloadedFile> SendFileAsync(HttpMethod method, string path, CancellationToken cancellationToken, HttpContent? content = null)
+    {
+        using var request = new HttpRequestMessage(method, path);
+        if (content != null) request.Content = content;
+        if (!string.IsNullOrWhiteSpace(_token)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var text = Encoding.UTF8.GetString(bytes);
+            var message = TryReadError(text) ?? $"请求失败，状态码：{(int)response.StatusCode}";
+            throw new PlayPageApiException(message, response.StatusCode);
+        }
+        return new DownloadedFile
+        {
+            Content = bytes,
+            ContentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream",
+            FileName = ParseDownloadFileName(response.Content.Headers.ContentDisposition?.ToString()) ?? "download"
+        };
+    }
+
+    private static string? ParseDownloadFileName(string? disposition)
+    {
+        if (string.IsNullOrWhiteSpace(disposition)) return null;
+        foreach (var part in disposition.Split(';'))
+        {
+            var trimmed = part.Trim();
+            if (trimmed.StartsWith("filename*=", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = trimmed.Substring("filename*=".Length);
+                const string prefix = "UTF-8''";
+                if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) value = value.Substring(prefix.Length);
+                return Uri.UnescapeDataString(value.Trim('"'));
+            }
+            if (trimmed.StartsWith("filename=", StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed.Substring("filename=".Length).Trim('"');
+            }
+        }
+        return null;
     }
 
     private string? TryReadError(string text)

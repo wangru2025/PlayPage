@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -78,6 +79,13 @@ public sealed class MainForm : Form
         menu.Items.Add("查看修复申请", null, async (_, _) => await ShowRepairRequestsAsync());
         menu.Items.Add("查看独立网址申请", null, async (_, _) => await ShowDomainsAsync());
         menu.Items.Add("查看历史版本", null, async (_, _) => await ShowReleasesAsync());
+        menu.Items.Add("上传新版本", null, async (_, _) => await UploadReleaseAsync());
+        menu.Items.Add("下载作品源码", null, async (_, _) => await DownloadSourceAsync());
+        menu.Items.Add("作品设置", null, async (_, _) => await EditSettingsAsync());
+        menu.Items.Add("申请修复", null, async (_, _) => await CreateRepairAsync());
+        menu.Items.Add("申请独立网址", null, async (_, _) => await CreateDomainAsync());
+        menu.Items.Add("统计数据", null, async (_, _) => await ShowStatsAsync());
+        menu.Items.Add("导出数据表", null, async (_, _) => await ExportDataAsync());
         _projects.ContextMenuStrip = menu;
 
         _status.Items.Add(_statusText);
@@ -86,7 +94,24 @@ public sealed class MainForm : Form
         root.Controls.Add(top, 0, 0);
         root.Controls.Add(_projects, 0, 1);
         root.Controls.Add(_status, 0, 2);
+        var mainMenu = new MenuStrip();
+        var fileMenu = new ToolStripMenuItem("文件(&F)");
+        fileMenu.DropDownItems.Add("新建作品(&N)", null, async (_, _) => await CreateProjectAsync());
+        fileMenu.DropDownItems.Add("刷新作品(&R)", null, async (_, _) => await LoadProjectsAsync());
+        fileMenu.DropDownItems.Add("退出(&X)", null, (_, _) => Close());
+        var projectMenu = new ToolStripMenuItem("作品(&P)");
+        projectMenu.DropDownItems.Add("上传新版本(&U)", null, async (_, _) => await UploadReleaseAsync());
+        projectMenu.DropDownItems.Add("下载作品源码(&D)", null, async (_, _) => await DownloadSourceAsync());
+        projectMenu.DropDownItems.Add("作品设置(&S)", null, async (_, _) => await EditSettingsAsync());
+        projectMenu.DropDownItems.Add("申请修复(&R)", null, async (_, _) => await CreateRepairAsync());
+        projectMenu.DropDownItems.Add("申请独立网址(&I)", null, async (_, _) => await CreateDomainAsync());
+        projectMenu.DropDownItems.Add("统计数据(&T)", null, async (_, _) => await ShowStatsAsync());
+        projectMenu.DropDownItems.Add("导出数据表(&E)", null, async (_, _) => await ExportDataAsync());
+        mainMenu.Items.Add(fileMenu);
+        mainMenu.Items.Add(projectMenu);
+        MainMenuStrip = mainMenu;
         Controls.Add(root);
+        Controls.Add(mainMenu);
     }
 
     private async Task SendCodeAsync()
@@ -182,6 +207,104 @@ public sealed class MainForm : Form
         MessageBox.Show(this, items.Count == 0 ? "暂无历史版本。" : string.Join("\n", items), "历史版本");
     }
 
+    private async Task CreateProjectAsync()
+    {
+        var name = Prompt.Show(this, "新建作品", "作品名称：");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var slug = Prompt.Show(this, "新建作品", "作品链接名，只能用字母数字短横线，留空则自动生成：");
+        var interactive = MessageBox.Show(this, "是否开启互动功能？", "新建作品", MessageBoxButtons.YesNo) == DialogResult.Yes;
+        var analytics = MessageBox.Show(this, "是否开启访问量统计？", "新建作品", MessageBoxButtons.YesNo) == DialogResult.Yes;
+        await _client.CreateProjectAsync(new ProjectCreateRequest { Name = name, Slug = slug, Interactive = interactive, AnalyticsEnabled = analytics });
+        await LoadProjectsAsync();
+    }
+
+    private async Task UploadReleaseAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        using var dialog = new OpenFileDialog { Title = "选择 HTML 或 ZIP 文件", Filter = "网页文件|*.html;*.htm;*.zip|所有文件|*.*" };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        var ext = System.IO.Path.GetExtension(dialog.FileName).ToLowerInvariant();
+        var mode = ext == ".zip" ? "zip" : "html";
+        var note = Prompt.Show(this, "上传新版本", "更新内容，可留空：");
+        await _client.UploadReleaseFileAsync(p.Id, dialog.FileName, mode, note);
+        SetStatus("新版本已上传。", false);
+        await LoadProjectsAsync();
+    }
+
+    private async Task DownloadSourceAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        var file = await _client.DownloadProjectSourceAsync(p.Id);
+        using var dialog = new SaveFileDialog { Title = "保存作品源码", FileName = file.FileName };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        await System.IO.File.WriteAllBytesAsync(dialog.FileName, file.Content);
+        SetStatus("作品源码已保存。", false);
+    }
+
+    private async Task EditSettingsAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        var name = Prompt.Show(this, "作品设置", "作品名称：", p.Name);
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var slug = Prompt.Show(this, "作品设置", "链接名：", p.Slug);
+        if (string.IsNullOrWhiteSpace(slug)) return;
+        var interactive = MessageBox.Show(this, "是否开启互动功能？", "作品设置", MessageBoxButtons.YesNo) == DialogResult.Yes;
+        var analytics = MessageBox.Show(this, "是否开启统计功能？", "作品设置", MessageBoxButtons.YesNo) == DialogResult.Yes;
+        await _client.UpdateProjectSettingsAsync(p.Id, new ProjectSettingsRequest { Name = name, Slug = slug, Interactive = interactive, AnalyticsEnabled = analytics });
+        await LoadProjectsAsync();
+    }
+
+    private async Task CreateRepairAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        var desc = Prompt.Show(this, "申请修复", "请描述遇到的问题：");
+        if (string.IsNullOrWhiteSpace(desc)) return;
+        var expected = Prompt.Show(this, "申请修复", "你期望修成什么样，可留空：");
+        await _client.CreateRepairRequestAsync(p.Id, new RepairRequestCreateRequest { IssueType = "other", Description = desc, Expected = expected, AllowAdminEdit = true, Contact = _email.Text });
+        SetStatus("修复申请已提交。", false);
+    }
+
+    private async Task CreateDomainAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        var subdomain = Prompt.Show(this, "申请独立网址", "请输入子域名，例如 my-game：");
+        if (string.IsNullOrWhiteSpace(subdomain)) return;
+        var created = await _client.CreateDomainRequestAsync(p.Id, subdomain);
+        SetStatus($"独立网址申请已提交：{created.Domain}", false);
+    }
+
+    private async Task ShowStatsAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        var stats = await _client.GetProjectStatsAsync(p.Id);
+        MessageBox.Show(this, $"访问量：{stats.TotalPageViews}\nAPI 请求：{stats.TotalApiRequests}\n成功：{stats.TotalApiSuccesses}\n失败：{stats.TotalApiFailures}\n成功率：{stats.ApiSuccessRate:P2}", "统计数据");
+    }
+
+    private async Task ExportDataAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        var collections = await _client.ListCollectionsAsync(p.Id);
+        if (collections.Count == 0)
+        {
+            MessageBox.Show(this, "这个作品还没有数据表。", "导出数据表");
+            return;
+        }
+        var names = new List<string>();
+        foreach (var item in collections) names.Add(item.Name);
+        var format = MessageBox.Show(this, "是否导出为 Word 表格？点“否”则导出 JSON。", "导出数据表", MessageBoxButtons.YesNo) == DialogResult.Yes ? "word" : "json";
+        var file = await _client.ExportProjectDataAsync(p.Id, names, format);
+        using var dialog = new SaveFileDialog { Title = "保存数据表导出", FileName = file.FileName };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        await System.IO.File.WriteAllBytesAsync(dialog.FileName, file.Content);
+        SetStatus("数据表已导出。", false);
+    }
     private void ShowError(Exception ex)
     {
         SetStatus("操作失败：" + ex.Message, true);
@@ -202,3 +325,19 @@ public sealed class MainForm : Form
         public override string ToString() => $"{Project.Name}（{Project.Slug}，{Project.Visibility}）";
     }
 }
+internal static class Prompt
+{
+    public static string Show(IWin32Window owner, string title, string label, string defaultValue = "")
+    {
+        using var form = new Form { Text = title, StartPosition = FormStartPosition.CenterParent, Width = 520, Height = 160, MinimizeBox = false, MaximizeBox = false };
+        var textLabel = new Label { Text = label, Left = 12, Top = 12, Width = 480, AutoSize = true };
+        var input = new TextBox { Left = 12, Top = 40, Width = 480, Text = defaultValue, AccessibleName = label };
+        var ok = new Button { Text = "确定", Left = 320, Width = 80, Top = 76, DialogResult = DialogResult.OK };
+        var cancel = new Button { Text = "取消", Left = 412, Width = 80, Top = 76, DialogResult = DialogResult.Cancel };
+        form.Controls.AddRange(new Control[] { textLabel, input, ok, cancel });
+        form.AcceptButton = ok;
+        form.CancelButton = cancel;
+        return form.ShowDialog(owner) == DialogResult.OK ? input.Text.Trim() : "";
+    }
+}
+
