@@ -75,14 +75,41 @@ jobs:
       - name: Restore
         run: dotnet restore src/PlayPage.Android/PlayPage.Android.csproj
 
-      - name: Build APK
-        run: dotnet build src/PlayPage.Android/PlayPage.Android.csproj -c Release --no-restore
+      - name: Generate Android signing key
+        shell: bash
+        run: |
+          keytool -genkeypair -v \
+            -keystore playpage-ci.keystore \
+            -alias playpage \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass playpage-ci-pass \
+            -keypass playpage-ci-pass \
+            -dname "CN=PlayPage CI,O=PlayPage,L=Internet,S=Internet,C=CN"
 
-      - name: Collect APK
+      - name: Build signed APK
+        run: >-
+          dotnet build src/PlayPage.Android/PlayPage.Android.csproj -c Release --no-restore
+          -p:AndroidKeyStore=true
+          -p:AndroidSigningKeyStore=${{ github.workspace }}/PlayPageClient/playpage-ci.keystore
+          -p:AndroidSigningStorePass=playpage-ci-pass
+          -p:AndroidSigningKeyAlias=playpage
+          -p:AndroidSigningKeyPass=playpage-ci-pass
+
+      - name: Collect and verify APK
         shell: bash
         run: |
           mkdir -p artifacts/android
-          find src/PlayPage.Android/bin/Release \( -name '*.apk' -o -name '*.aab' \) -print -exec cp {} artifacts/android/ \;
+          find src/PlayPage.Android/bin/Release -name '*Signed.apk' -print -exec cp {} artifacts/android/PlayPage-Android.apk \;
+          if [ ! -f artifacts/android/PlayPage-Android.apk ]; then
+            find src/PlayPage.Android/bin/Release -name '*.apk' -print -exec cp {} artifacts/android/PlayPage-Android.apk \; -quit
+          fi
+          if [ ! -f artifacts/android/PlayPage-Android.apk ]; then
+            echo "No APK produced" >&2
+            exit 1
+          fi
+          ${ANDROID_HOME}/build-tools/$(ls ${ANDROID_HOME}/build-tools | sort -V | tail -n 1)/apksigner verify --verbose artifacts/android/PlayPage-Android.apk
           ls -la artifacts/android
 
       - name: Upload Android artifact
