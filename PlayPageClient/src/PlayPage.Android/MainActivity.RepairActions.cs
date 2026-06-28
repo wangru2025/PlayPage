@@ -59,6 +59,31 @@ public sealed partial class MainActivity
     private async System.Threading.Tasks.Task ShowDomainsAsync(ProjectSummary project)
     {
         var domains = await _client.ListDomainsAsync(project.Id);
-        ShowMessage("独立网址", domains.Count == 0 ? "暂无独立网址申请。" : string.Join("\n", domains.Select(d => $"{d.Domain} - {d.Status}")));
+        var deleteRequests = await _client.ListDomainDeleteRequestsAsync(project.Id);
+        if (domains.Count == 0 && deleteRequests.Count == 0)
+        {
+            ShowMessage("独立网址", "暂无独立网址申请。");
+            return;
+        }
+
+        var actions = domains.Select(d => $"申请删除：{d.Domain}（{d.Status}）")
+            .Concat(deleteRequests.Select(r => $"删除申请：{r.Domain}（{r.Status}）"))
+            .ToArray();
+        new AlertDialog.Builder(this)
+            .SetTitle("独立网址")
+            .SetItems(actions, async (_, args) =>
+            {
+                try
+                {
+                    if (args.Which >= domains.Count) return;
+                    var domain = domains[args.Which];
+                    var reason = await PromptAsync("申请删除独立网址", "删除原因，可留空");
+                    await _client.CreateDomainDeleteRequestAsync(project.Id, domain.Id, reason ?? "");
+                    SetStatus("已提交删除独立网址申请：" + domain.Domain);
+                }
+                catch (System.Exception ex) { ShowError(ex); }
+            })
+            .SetNegativeButton("关闭", (_, _) => { })
+            .Show();
     }
 }

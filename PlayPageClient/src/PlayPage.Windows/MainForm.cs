@@ -63,11 +63,13 @@ public sealed partial class MainForm : Form
         projectMenu.DropDownItems.Add("统计数据(&T)", null, async (_, _) => await ShowStatsAsync());
         projectMenu.DropDownItems.Add("管理互动数据(&M)", null, async (_, _) => await ManageInteractiveDataAsync());
         projectMenu.DropDownItems.Add("导出数据表(&E)", null, async (_, _) => await ExportDataAsync());
+        projectMenu.DropDownItems.Add("删除作品(&X)", null, async (_, _) => await DeleteProjectAsync());
 
         var adminMenu = new ToolStripMenuItem("管理(&A)");
         adminMenu.DropDownItems.Add("管理摘要(&S)", null, async (_, _) => await ShowAdminSummaryAsync());
         adminMenu.DropDownItems.Add("升级申请(&U)", null, async (_, _) => await ShowAdminUpgradeRequestsAsync());
         adminMenu.DropDownItems.Add("独立网址申请(&D)", null, async (_, _) => await ShowAdminDomainRequestsAsync());
+        adminMenu.DropDownItems.Add("独立网址删除申请(&X)", null, async (_, _) => await ShowAdminDomainDeleteRequestsAsync());
         adminMenu.DropDownItems.Add("修复申请(&R)", null, async (_, _) => await ShowAdminRepairRequestsAsync());
         adminMenu.DropDownItems.Add("模板投稿(&T)", null, async (_, _) => await ShowAdminTemplateSubmissionsAsync());
 
@@ -160,6 +162,7 @@ public sealed partial class MainForm : Form
         menu.Items.Add("更多：统计数据", null, async (_, _) => await ShowStatsAsync());
         menu.Items.Add("更多：管理互动数据", null, async (_, _) => await ManageInteractiveDataAsync());
         menu.Items.Add("更多：导出数据表", null, async (_, _) => await ExportDataAsync());
+        menu.Items.Add("更多：删除作品", null, async (_, _) => await DeleteProjectAsync());
         _projects.ContextMenuStrip = menu;
     }
 

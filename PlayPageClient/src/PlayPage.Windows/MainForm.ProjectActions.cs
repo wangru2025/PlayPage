@@ -39,7 +39,18 @@ public sealed partial class MainForm
         var p = SelectedProject();
         if (p == null) return;
         var items = await _client.ListDomainsAsync(p.Id);
-        MessageBox.Show(this, items.Count == 0 ? "暂无独立网址申请。" : string.Join("\n", items), "独立网址");
+        var deleteRequests = await _client.ListDomainDeleteRequestsAsync(p.Id);
+        if (items.Count == 0 && deleteRequests.Count == 0)
+        {
+            MessageBox.Show(this, "暂无独立网址申请。", "独立网址");
+            return;
+        }
+        using var form = new DomainManagementForm(items, deleteRequests);
+        if (form.ShowDialog(this) != DialogResult.OK || form.SelectedDomain == null) return;
+        var domain = form.SelectedDomain;
+        var reason = Prompt.Show(this, "申请删除独立网址", "删除原因，可留空：") ?? "";
+        await _client.CreateDomainDeleteRequestAsync(p.Id, domain.Id, reason);
+        SetStatus($"已提交删除独立网址申请：{domain.Domain}", false);
     }
 
     private async Task ShowReleasesAsync()
@@ -169,6 +180,36 @@ public sealed partial class MainForm
         if (string.IsNullOrWhiteSpace(subdomain)) return;
         var created = await _client.CreateDomainRequestAsync(p.Id, subdomain);
         SetStatus($"独立网址申请已提交：{created.Domain}", false);
+    }
+
+    private async Task DeleteProjectAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        var domains = await _client.ListDomainsAsync(p.Id);
+        var activeDomains = domains.Where(x => x.Status == "active").ToList();
+        var message = $"确认删除作品“{p.Name}”吗？此操作会删除作品本身。";
+        if (activeDomains.Count > 0)
+        {
+            message += $"\n\n这个作品有 {activeDomains.Count} 个已通过的独立网址。删除作品前会先提交独立网址删除申请，管理员处理前这些网址会进入待清理状态。";
+        }
+        if (MessageBox.Show(this, message, "删除作品", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+
+        foreach (var domain in activeDomains)
+        {
+            try
+            {
+                await _client.CreateDomainDeleteRequestAsync(p.Id, domain.Id, "删除作品时自动申请删除独立网址");
+            }
+            catch
+            {
+                // 如果已有重复申请或接口拒绝，继续删除作品；用户仍可在独立网址页面查看状态。
+            }
+        }
+
+        await _client.DeleteProjectAsync(p.Id);
+        SetStatus("作品已删除。", false);
+        await LoadProjectsAsync();
     }
 
     private async Task ShowStatsAsync()

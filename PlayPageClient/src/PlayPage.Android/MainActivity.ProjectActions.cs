@@ -24,7 +24,7 @@ public sealed partial class MainActivity
     {
         if (position < 0 || position >= _projectItems.Count) return;
         var project = _projectItems[position];
-        var actions = new[] { "打开作品", "查看详情", "作品设置", "切换广场显示", "上传新版本", "下载作品源码", "管理互动数据", "导出数据表", "申请修复", "查看修复申请", "AI 圆桌", "申请独立网址", "查看独立网址", "查看历史版本", "统计数据" };
+        var actions = new[] { "打开作品", "查看详情", "作品设置", "切换广场显示", "上传新版本", "下载作品源码", "管理互动数据", "导出数据表", "申请修复", "查看修复申请", "AI 圆桌", "申请独立网址", "查看独立网址", "查看历史版本", "统计数据", "删除作品" };
         new AlertDialog.Builder(this)
             .SetTitle(project.Name)
             .SetItems(actions, async (_, args) =>
@@ -80,6 +80,9 @@ public sealed partial class MainActivity
                         case 14:
                             var stats = await _client.GetProjectStatsAsync(project.Id);
                             ShowMessage("统计数据", $"访问量：{stats.TotalPageViews}\nAPI 请求：{stats.TotalApiRequests}\n成功：{stats.TotalApiSuccesses}\n失败：{stats.TotalApiFailures}");
+                            break;
+                        case 15:
+                            await DeleteProjectAsync(project);
                             break;
                     }
                 }
@@ -416,6 +419,34 @@ public sealed partial class MainActivity
         return uri.LastPathSegment;
     }
 
+
+    private async System.Threading.Tasks.Task DeleteProjectAsync(ProjectSummary project)
+    {
+        var domains = await _client.ListDomainsAsync(project.Id);
+        var activeDomains = domains.Where(d => d.Status == "active").ToList();
+        var message = $"确认删除作品“{project.Name}”吗？";
+        if (activeDomains.Count > 0) message += $"\n这个作品有 {activeDomains.Count} 个已通过的独立网址，会先自动提交删除独立网址申请。";
+        new AlertDialog.Builder(this)
+            .SetTitle("删除作品")
+            .SetMessage(message)
+            .SetPositiveButton("删除", async (_, _) =>
+            {
+                try
+                {
+                    foreach (var domain in activeDomains)
+                    {
+                        try { await _client.CreateDomainDeleteRequestAsync(project.Id, domain.Id, "删除作品时自动申请删除独立网址"); }
+                        catch { }
+                    }
+                    await _client.DeleteProjectAsync(project.Id);
+                    SetStatus("作品已删除。 ");
+                    await LoadProjectsAsync();
+                }
+                catch (System.Exception ex) { ShowError(ex); }
+            })
+            .SetNegativeButton("取消", (_, _) => { })
+            .Show();
+    }
 
     private async System.Threading.Tasks.Task ShowReleasesAsync(ProjectSummary project)
     {

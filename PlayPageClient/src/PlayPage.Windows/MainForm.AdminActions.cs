@@ -91,6 +91,22 @@ public sealed partial class MainForm
         MessageBox.Show(this, string.Join("\n", items.Select(x => $"{x.Domain} - {x.OwnerEmail} - {x.ProjectName}")), "独立网址申请");
     }
 
+    private async Task ShowAdminDomainDeleteRequestsAsync()
+    {
+        var items = await _client.AdminListProjectDomainDeleteRequestsAsync("pending");
+        if (items.Count == 0)
+        {
+            MessageBox.Show(this, "没有待处理独立网址删除申请。", "独立网址删除申请");
+            return;
+        }
+        var first = items[0];
+        var approve = MessageBox.Show(this, $"处理第一条删除申请？\n域名：{first.Domain}\n原因：{first.Reason}\n\n点是标记已完成，点否取消。", "独立网址删除申请", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+        if (!approve) return;
+        var note = Prompt.Show(this, "独立网址删除申请", "管理员备注，可留空：") ?? "";
+        await _client.AdminReviewProjectDomainDeleteAsync(first.Id, new ProjectDomainDeleteReviewRequest { Status = "completed", AdminNote = note });
+        SetStatus("独立网址删除申请已标记完成。", false);
+    }
+
     private async Task ShowAdminRepairRequestsAsync()
     {
         var items = await _client.AdminListRepairRequestsAsync("pending");
