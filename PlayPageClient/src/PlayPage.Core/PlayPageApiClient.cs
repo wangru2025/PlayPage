@@ -97,10 +97,27 @@ public sealed class PlayPageApiClient
     public Task<ReleaseInfo> PublishRepairAIAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendJsonAsync<ReleaseInfo>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/publish"), new { }, cancellationToken);
 
     public Task<IReadOnlyList<TemplateInfo>> ListTemplatesAsync(CancellationToken cancellationToken = default) => GetItemsAsync<TemplateInfo>("api/v1/templates", cancellationToken);
-    public Task<TemplateInfo> GetTemplateAsync(string templateId, CancellationToken cancellationToken = default) => SendAsync<TemplateInfo>(HttpMethod.Get, $"api/v1/templates/{Uri.EscapeDataString(templateId)}", cancellationToken);
+    public async Task<TemplateInfo> GetTemplateAsync(string templateId, CancellationToken cancellationToken = default) => (await SendAsync<TemplateEnvelope>(HttpMethod.Get, $"api/v1/templates/{Uri.EscapeDataString(templateId)}", cancellationToken).ConfigureAwait(false)).Template;
     public Task<IReadOnlyList<UpgradeRequestInfo>> ListMyUpgradeRequestsAsync(CancellationToken cancellationToken = default) => GetItemsAsync<UpgradeRequestInfo>("api/v1/me/upgrade-requests", cancellationToken);
     public Task<UpgradeRequestInfo> CreateUpgradeRequestAsync(UpgradeRequestCreateRequest request, CancellationToken cancellationToken = default) => SendJsonAsync<UpgradeRequestInfo>(HttpMethod.Post, "api/v1/me/upgrade-requests", request, cancellationToken);
+    public Task<TemplateSubmissionInfo> CreateTemplateSubmissionAsync(TemplateSubmissionCreateRequest request, CancellationToken cancellationToken = default) => SendJsonAsync<TemplateSubmissionInfo>(HttpMethod.Post, "api/v1/template-submissions", request, cancellationToken);
+    public Task<IReadOnlyList<TemplateSubmissionInfo>> ListMyTemplateSubmissionsAsync(CancellationToken cancellationToken = default) => GetItemsAsync<TemplateSubmissionInfo>("api/v1/me/template-submissions", cancellationToken);
 
+    public Task<IReadOnlyList<AdminUserSummary>> AdminListUsersAsync(CancellationToken cancellationToken = default) => GetItemsAsync<AdminUserSummary>("api/v1/admin/users", cancellationToken);
+    public Task<IReadOnlyList<AdminProjectSummary>> AdminListProjectsAsync(CancellationToken cancellationToken = default) => GetItemsAsync<AdminProjectSummary>("api/v1/admin/projects", cancellationToken);
+    public Task<IReadOnlyList<UpgradeRequestInfo>> AdminListUpgradeRequestsAsync(CancellationToken cancellationToken = default) => GetItemsAsync<UpgradeRequestInfo>("api/v1/admin/upgrade-requests", cancellationToken);
+    public Task<IReadOnlyList<ProjectDomainInfo>> AdminListProjectDomainsAsync(string status = "", CancellationToken cancellationToken = default) => GetItemsAsync<ProjectDomainInfo>("api/v1/admin/project-domains" + QueryStatus(status), cancellationToken);
+    public Task<IReadOnlyList<ProjectDomainDeleteRequestInfo>> AdminListProjectDomainDeleteRequestsAsync(string status = "", CancellationToken cancellationToken = default) => GetItemsAsync<ProjectDomainDeleteRequestInfo>("api/v1/admin/project-domain-delete-requests" + QueryStatus(status), cancellationToken);
+    public Task<IReadOnlyList<RepairRequestInfo>> AdminListRepairRequestsAsync(string status = "", CancellationToken cancellationToken = default) => GetItemsAsync<RepairRequestInfo>("api/v1/admin/repair-requests" + QueryStatus(status), cancellationToken);
+    public Task<IReadOnlyList<TemplateSubmissionInfo>> AdminListTemplateSubmissionsAsync(string status = "", CancellationToken cancellationToken = default) => GetItemsAsync<TemplateSubmissionInfo>("api/v1/admin/template-submissions" + QueryStatus(status), cancellationToken);
+    public Task<AdminUserSummary> AdminUpdateUserAsync(string userId, AdminUserUpdateRequest request, CancellationToken cancellationToken = default) => SendJsonAsync<AdminUserSummary>(HttpMethod.Post, $"api/v1/admin/users/{Uri.EscapeDataString(userId)}", request, cancellationToken);
+    public Task<UpgradeRequestInfo> AdminReviewUpgradeRequestAsync(string requestId, UpgradeRequestReviewRequest request, CancellationToken cancellationToken = default) => SendJsonAsync<UpgradeRequestInfo>(HttpMethod.Post, $"api/v1/admin/upgrade-requests/{Uri.EscapeDataString(requestId)}/review", request, cancellationToken);
+    public Task<ProjectDomainInfo> AdminReviewProjectDomainAsync(string domainId, ProjectDomainReviewRequest request, CancellationToken cancellationToken = default) => SendJsonAsync<ProjectDomainInfo>(HttpMethod.Post, $"api/v1/admin/project-domains/{Uri.EscapeDataString(domainId)}/review", request, cancellationToken);
+    public Task<ProjectDomainDeleteRequestInfo> AdminReviewProjectDomainDeleteAsync(string requestId, ProjectDomainDeleteReviewRequest request, CancellationToken cancellationToken = default) => SendJsonAsync<ProjectDomainDeleteRequestInfo>(HttpMethod.Post, $"api/v1/admin/project-domain-delete-requests/{Uri.EscapeDataString(requestId)}/review", request, cancellationToken);
+    public Task<RepairRequestInfo> AdminReviewRepairRequestAsync(string requestId, RepairRequestReviewRequest request, CancellationToken cancellationToken = default) => SendJsonAsync<RepairRequestInfo>(HttpMethod.Post, $"api/v1/admin/repair-requests/{Uri.EscapeDataString(requestId)}/review", request, cancellationToken);
+    public Task<TemplateSubmissionInfo> AdminReviewTemplateSubmissionAsync(string submissionId, TemplateSubmissionReviewRequest request, CancellationToken cancellationToken = default) => SendJsonAsync<TemplateSubmissionInfo>(HttpMethod.Post, $"api/v1/admin/template-submissions/{Uri.EscapeDataString(submissionId)}/review", request, cancellationToken);
+
+    private static string QueryStatus(string status) => string.IsNullOrWhiteSpace(status) ? "" : "?status=" + Uri.EscapeDataString(status);
     private static string ProjectPath(string projectId, string suffix) => $"api/v1/projects/{Uri.EscapeDataString(projectId)}/{suffix}";
     private async Task<IReadOnlyList<T>> GetItemsAsync<T>(string path, CancellationToken cancellationToken) => (await SendAsync<ListEnvelope<T>>(HttpMethod.Get, path, cancellationToken).ConfigureAwait(false)).Items;
 
@@ -194,3 +211,4 @@ public sealed class PlayPageApiClient
         return null;
     }
 }
+

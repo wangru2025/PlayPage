@@ -207,6 +207,8 @@ public sealed class RepairRequestInfo
     public string ProjectId { get; set; } = "";
     public string ProjectName { get; set; } = "";
     public string ProjectPublicUrl { get; set; } = "";
+    public string OwnerEmail { get; set; } = "";
+    public string Username { get; set; } = "";
     public string IssueType { get; set; } = "";
     public string Description { get; set; } = "";
     public string Expected { get; set; } = "";
@@ -350,6 +352,118 @@ public sealed class ListEnvelope<T>
     public List<T> Items { get; set; } = new List<T>();
 }
 
+public sealed class TemplateEnvelope
+{
+    public TemplateInfo Template { get; set; } = new TemplateInfo();
+}
+
+public sealed class TemplateSubmissionInfo
+{
+    public string Id { get; set; } = "";
+    public string AuthorUserId { get; set; } = "";
+    public string AuthorEmail { get; set; } = "";
+    public string AuthorName { get; set; } = "";
+    public string Slug { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Category { get; set; } = "";
+    public string CategoryLabel { get; set; } = "";
+    public string Summary { get; set; } = "";
+    public string Description { get; set; } = "";
+    public List<string> Tags { get; set; } = new List<string>();
+    public bool InteractiveRequired { get; set; }
+    public bool AnalyticsRecommended { get; set; }
+    public List<TemplateConfigField> ConfigFields { get; set; } = new List<TemplateConfigField>();
+    public List<TemplateCollectionDefinition> Collections { get; set; } = new List<TemplateCollectionDefinition>();
+    public string HtmlSource { get; set; } = "";
+    public string SourceType { get; set; } = "html";
+    public string Status { get; set; } = "";
+    public string AdminNote { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public sealed class TemplateSubmissionCreateRequest
+{
+    public string Slug { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Category { get; set; } = "other";
+    public string CategoryLabel { get; set; } = "其他";
+    public string Summary { get; set; } = "";
+    public string Description { get; set; } = "";
+    public List<string> Tags { get; set; } = new List<string>();
+    public bool InteractiveRequired { get; set; }
+    public bool AnalyticsRecommended { get; set; } = true;
+    public List<TemplateConfigField> ConfigFields { get; set; } = new List<TemplateConfigField>();
+    public List<TemplateCollectionDefinition> Collections { get; set; } = new List<TemplateCollectionDefinition>();
+    public string HtmlSource { get; set; } = "";
+    public string SourceType { get; set; } = "html";
+}
+
+public sealed class TemplateSubmissionReviewRequest
+{
+    public string Status { get; set; } = "published";
+    public string AdminNote { get; set; } = "";
+}
+
+public sealed class AdminUserSummary
+{
+    public string Id { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Username { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string Role { get; set; } = "";
+    public string PlanCode { get; set; } = "";
+    public int ProjectCount { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class AdminProjectSummary
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Slug { get; set; } = "";
+    public string Username { get; set; } = "";
+    public string OwnerUserId { get; set; } = "";
+    public string OwnerEmail { get; set; } = "";
+    public bool Interactive { get; set; }
+    public bool AnalyticsEnabled { get; set; }
+    public string Visibility { get; set; } = "";
+    public string CurrentReleaseId { get; set; } = "";
+    public string PublicUrl { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class AdminUserUpdateRequest
+{
+    public string Role { get; set; } = "user";
+    public string PlanCode { get; set; } = "free";
+}
+
+public sealed class UpgradeRequestReviewRequest
+{
+    public string Status { get; set; } = "approved";
+    public string TargetPlan { get; set; } = "";
+    public string AdminNote { get; set; } = "";
+}
+
+public sealed class ProjectDomainReviewRequest
+{
+    public string Status { get; set; } = "active";
+    public string RejectReason { get; set; } = "";
+    public string AdminNote { get; set; } = "";
+}
+
+public sealed class ProjectDomainDeleteReviewRequest
+{
+    public string Status { get; set; } = "completed";
+    public string AdminNote { get; set; } = "";
+}
+
+public sealed class RepairRequestReviewRequest
+{
+    public string Status { get; set; } = "fixed";
+    public string AdminReply { get; set; } = "";
+}
 public sealed class DataExportRequest
 {
     public List<string> Collections { get; set; } = new List<string>();
@@ -366,4 +480,5 @@ public sealed class StatusEnvelope
 {
     public string Status { get; set; } = "";
 }
+
 
