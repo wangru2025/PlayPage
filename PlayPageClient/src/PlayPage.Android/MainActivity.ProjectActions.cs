@@ -422,8 +422,7 @@ public sealed partial class MainActivity
         var labels = ordered.Select(r =>
         {
             var note = string.IsNullOrWhiteSpace(r.ChangeNote) ? "无更新说明" : r.ChangeNote;
-            return $"{r.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}
-{note}";
+            return $"{r.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}\n{note}";
         }).ToArray();
 
         new AlertDialog.Builder(this)
@@ -433,8 +432,7 @@ public sealed partial class MainActivity
                 var selected = ordered[args.Which];
                 new AlertDialog.Builder(this)
                     .SetTitle("确认回滚")
-                    .SetMessage("确认回滚到这个版本吗？
-" + labels[args.Which])
+                    .SetMessage("确认回滚到这个版本吗？\n" + labels[args.Which])
                     .SetPositiveButton("回滚", async (_, _) =>
                     {
                         try
