@@ -165,6 +165,21 @@ internal sealed class TemplateMarketForm : Form
             {
                 editor = new TextBox { Multiline = true, Height = 72, ScrollBars = ScrollBars.Vertical, Text = field.Default, Anchor = AnchorStyles.Left | AnchorStyles.Right };
             }
+            else if (field.Type == "color")
+            {
+                var colorRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+                var text = new TextBox { Text = string.IsNullOrWhiteSpace(field.Default) ? "#ffffff" : field.Default, Width = 120 };
+                var pick = new Button { Text = "选择颜色", AutoSize = true };
+                pick.Click += (_, _) =>
+                {
+                    using var dialog = new ColorDialog { FullOpen = true };
+                    if (TryParseColor(text.Text, out var current)) dialog.Color = current;
+                    if (dialog.ShowDialog(this) == DialogResult.OK) text.Text = $"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}";
+                };
+                colorRow.Controls.Add(text);
+                colorRow.Controls.Add(pick);
+                editor = colorRow;
+            }
             else
             {
                 editor = new TextBox { Text = field.Default, Anchor = AnchorStyles.Left | AnchorStyles.Right };
@@ -243,8 +258,18 @@ internal sealed class TemplateMarketForm : Form
     {
         TextBox text => text.Text.Trim(),
         ComboBox combo => combo.Text.Trim(),
+        FlowLayoutPanel panel when panel.Controls.OfType<TextBox>().FirstOrDefault() is TextBox text => text.Text.Trim(),
         _ => control.Text.Trim()
     };
+
+    private static bool TryParseColor(string value, out Color color)
+    {
+        color = Color.White;
+        value = (value ?? "").Trim();
+        if (!Regex.IsMatch(value, "^#[0-9a-fA-F]{6}$")) return false;
+        color = ColorTranslator.FromHtml(value);
+        return true;
+    }
 
     private void SetStatus(string text)
     {

@@ -74,7 +74,7 @@ public sealed partial class MainForm
             return;
         }
         var first = pending[0];
-        var approve = MessageBox.Show(this, $"处理第一条待审核申请？\n用户：{first.UserEmail}\n目标套餐：{first.TargetPlan}\n备注：{first.PayerNote}\n\n点是通过，点否取消。", "升级申请", MessageBoxButtons.YesNo) == DialogResult.Yes;
+        var approve = MessageBox.Show(this, $"处理第一条待审核申请？\n用户：{first.UserEmail}\n目标套餐：{PlayPageDisplay.Plan(first.TargetPlan)}\n备注：{first.PayerNote}\n\n点是通过，点否取消。", "升级申请", MessageBoxButtons.YesNo) == DialogResult.Yes;
         if (!approve) return;
         await _client.AdminReviewUpgradeRequestAsync(first.Id, new UpgradeRequestReviewRequest { Status = "approved", TargetPlan = first.TargetPlan, AdminNote = "客户端审核通过" });
         SetStatus("升级申请已通过。", false);
@@ -88,7 +88,7 @@ public sealed partial class MainForm
             MessageBox.Show(this, "没有待处理独立网址申请。", "独立网址申请");
             return;
         }
-        MessageBox.Show(this, string.Join("\n", items.Select(x => $"{x.Domain} - {x.OwnerEmail} - {x.ProjectName}")), "独立网址申请");
+        MessageBox.Show(this, string.Join("\n", items.Select(x => $"{x.Domain}｜{x.OwnerEmail}｜{x.ProjectName}")), "独立网址申请");
     }
 
     private async Task ShowAdminDomainDeleteRequestsAsync()
