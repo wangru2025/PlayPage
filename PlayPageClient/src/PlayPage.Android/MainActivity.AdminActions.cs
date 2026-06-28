@@ -192,6 +192,101 @@ public sealed partial class MainActivity
         return "";
     }
 
+
+    private System.Threading.Tasks.Task<bool> SubmitTemplateAsync()
+    {
+        var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+        var scroll = new ScrollView(this);
+        var layout = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        layout.SetPadding(32, 12, 32, 0);
+        scroll.AddView(layout);
+
+        var name = new EditText(this) { Hint = "模板名称" };
+        var slug = new EditText(this) { Hint = "模板链接名" };
+        var category = new EditText(this) { Hint = "分类 ID，例如 community", Text = "community" };
+        var categoryLabel = new EditText(this) { Hint = "分类显示名", Text = "用户投稿" };
+        var summary = new EditText(this) { Hint = "一句话简介" };
+        var description = new EditText(this) { Hint = "详细说明" };
+        description.SetSingleLine(false); description.SetMinLines(3);
+        var tags = new EditText(this) { Hint = "标签，逗号分隔" };
+        var interactiveRequired = new CheckBox(this) { Text = "需要互动功能" };
+        var analyticsRecommended = new CheckBox(this) { Text = "建议开启统计", Checked = true };
+        var configFields = new EditText(this) { Hint = "参数声明 JSON", Text = "[]" };
+        configFields.SetSingleLine(false); configFields.SetMinLines(5);
+        var collections = new EditText(this) { Hint = "数据集合声明 JSON", Text = "[]" };
+        collections.SetSingleLine(false); collections.SetMinLines(5);
+        var html = new EditText(this) { Hint = "模板 HTML 源码" };
+        html.SetSingleLine(false); html.SetMinLines(10);
+        html.Text = "<!doctype html>\n<html lang=\"zh-CN\">\n<head><meta charset=\"utf-8\"><title>{{siteTitle}}</title></head>\n<body><h1>{{siteTitle}}</h1></body>\n</html>";
+        foreach (var v in new View[] { name, slug, category, categoryLabel, summary, description, tags, interactiveRequired, analyticsRecommended, configFields, collections, html }) layout.AddView(v);
+        name.TextChanged += (_, _) => { if (string.IsNullOrWhiteSpace(slug.Text)) slug.Text = NormalizeSlug(name.Text ?? ""); };
+        var status = new TextView(this) { Text = "填写模板信息后提交审核。" };
+        layout.AddView(status);
+
+        var dialog = new AlertDialog.Builder(this)
+            .SetTitle("投稿模板")
+            .SetView(scroll)
+            .SetPositiveButton("提交审核", (sender, _) => { })
+            .SetNegativeButton("取消", (_, _) => tcs.TrySetResult(false))
+            .Create();
+        dialog.SetOnShowListener(new DialogShowListener(() =>
+        {
+            var ok = dialog.GetButton((int)DialogButtonType.Positive);
+            ok.Click += async (_, _) =>
+            {
+                var n = name.Text?.Trim() ?? "";
+                var sum = summary.Text?.Trim() ?? "";
+                if (n.Length == 0 || sum.Length == 0) { status.Text = "模板名称和简介都要填写。"; return; }
+                if (string.IsNullOrWhiteSpace(html.Text)) { status.Text = "请提供模板 HTML 源码。"; return; }
+                try
+                {
+                    var fields = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<TemplateConfigField>>(string.IsNullOrWhiteSpace(configFields.Text) ? "[]" : configFields.Text!, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new System.Collections.Generic.List<TemplateConfigField>();
+                    var cols = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<TemplateCollectionDefinition>>(string.IsNullOrWhiteSpace(collections.Text) ? "[]" : collections.Text!, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new System.Collections.Generic.List<TemplateCollectionDefinition>();
+                    ok.Enabled = false;
+                    status.Text = "正在提交模板审核。";
+                    await _client.CreateTemplateSubmissionAsync(new TemplateSubmissionCreateRequest
+                    {
+                        Name = n,
+                        Slug = NormalizeSlug(slug.Text ?? n),
+                        Category = string.IsNullOrWhiteSpace(category.Text) ? "community" : category.Text!.Trim(),
+                        CategoryLabel = string.IsNullOrWhiteSpace(categoryLabel.Text) ? "用户投稿" : categoryLabel.Text!.Trim(),
+                        Summary = sum,
+                        Description = description.Text?.Trim() ?? "",
+                        Tags = SplitTags(tags.Text ?? ""),
+                        InteractiveRequired = interactiveRequired.Checked,
+                        AnalyticsRecommended = analyticsRecommended.Checked,
+                        ConfigFields = fields,
+                        Collections = cols,
+                        HtmlSource = html.Text ?? "",
+                        SourceType = "text"
+                    });
+                    dialog.Dismiss();
+                    SetStatus("模板投稿已提交，等待管理员审核。");
+                    tcs.TrySetResult(true);
+                }
+                catch (System.Exception ex)
+                {
+                    ok.Enabled = true;
+                    status.Text = "提交失败：" + ex.Message;
+                    Toast.MakeText(this, ex.Message, ToastLength.Long)?.Show();
+                }
+            };
+        }));
+        dialog.Show();
+        return tcs.Task;
+    }
+
+    private static System.Collections.Generic.List<string> SplitTags(string value)
+    {
+        var result = new System.Collections.Generic.List<string>();
+        foreach (var item in value.Split(new[] { ',', '，', '\n', '\r' }, System.StringSplitOptions.RemoveEmptyEntries))
+        {
+            var text = item.Trim();
+            if (text.Length > 0) result.Add(text);
+        }
+        return result;
+    }
+
     private async System.Threading.Tasks.Task ShowAdminSummaryAsync()
     {
         var users = await _client.AdminListUsersAsync();

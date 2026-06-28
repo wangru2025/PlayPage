@@ -44,26 +44,14 @@ public sealed partial class MainForm
 
     private async Task SubmitTemplateAsync()
     {
-        var name = Prompt.Show(this, "投稿模板", "模板名称：");
-        if (string.IsNullOrWhiteSpace(name)) return;
-        var slug = Prompt.Show(this, "投稿模板", "模板链接名：");
-        if (string.IsNullOrWhiteSpace(slug)) return;
-        var summary = Prompt.Show(this, "投稿模板", "一句话简介：");
-        var description = Prompt.Show(this, "投稿模板", "详细说明：");
-        using var dialog = new OpenFileDialog { Title = "选择模板 HTML 文件", Filter = "HTML 文件|*.html;*.htm|所有文件|*.*" };
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        var html = await System.IO.File.ReadAllTextAsync(dialog.FileName);
-        await _client.CreateTemplateSubmissionAsync(new TemplateSubmissionCreateRequest
+        if (_currentUser == null)
         {
-            Name = name,
-            Slug = slug,
-            Summary = summary,
-            Description = description,
-            HtmlSource = html,
-            SourceType = "html",
-            Category = "community",
-            CategoryLabel = "社区投稿"
-        });
+            await ShowLoginDialogAsync();
+            return;
+        }
+        using var form = new TemplateSubmissionForm();
+        if (form.ShowDialog(this) != DialogResult.OK || form.Result == null) return;
+        await _client.CreateTemplateSubmissionAsync(form.Result);
         SetStatus("模板投稿已提交，等待管理员审核。", false);
     }
 

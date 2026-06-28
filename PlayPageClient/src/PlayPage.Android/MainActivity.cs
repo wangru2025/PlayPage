@@ -74,6 +74,7 @@ public sealed partial class MainActivity : Activity
         if (menu == null) return base.OnCreateOptionsMenu(menu);
         menu.Add("新建作品");
         menu.Add("模板市场");
+        menu.Add("投稿模板");
         menu.Add("管理摘要");
         menu.Add("退出登录");
         return true;
@@ -91,6 +92,7 @@ public sealed partial class MainActivity : Activity
         {
             if (title == "新建作品") await CreateProjectAsync();
             else if (title == "模板市场") await ShowTemplatesAsync();
+            else if (title == "投稿模板") await SubmitTemplateAsync();
             else if (title == "管理摘要") await ShowAdminSummaryAsync();
             else if (title == "退出登录") await LogoutAsync();
         }
