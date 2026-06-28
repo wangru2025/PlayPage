@@ -3,6 +3,7 @@ using Android.App;
 using Android.Content;
 using Android.Database;
 using Android.Provider;
+using Android.Text;
 using Android.Widget;
 using PlayPage.Core;
 
@@ -86,11 +87,186 @@ public sealed partial class MainActivity
             await ShowLoginDialogAsync();
             return;
         }
-        var name = await PromptAsync("新建作品", "作品名称");
-        if (string.IsNullOrWhiteSpace(name)) return;
-        var slug = await PromptAsync("新建作品", "作品链接名，可留空");
-        await _client.CreateProjectAsync(new ProjectCreateRequest { Name = name, Slug = slug, Interactive = true, AnalyticsEnabled = false });
-        await LoadProjectsAsync();
+
+        var input = await PromptCreateProjectAsync();
+        if (input == null) return;
+
+        SetStatus("正在创建作品。");
+        var project = await _client.CreateProjectAsync(new ProjectCreateRequest
+        {
+            Name = input.Name,
+            Slug = input.Slug,
+            Interactive = input.Interactive,
+            AnalyticsEnabled = input.AnalyticsEnabled
+        });
+
+        if (input.Mode == AndroidCreateUploadMode.File)
+        {
+            SetStatus("请选择要上传的 HTML 或 ZIP 文件。");
+            PickReleaseFile(project);
+        }
+        else if (input.Mode == AndroidCreateUploadMode.HtmlText)
+        {
+            SetStatus("正在发布粘贴的 HTML。");
+            await _client.UploadReleaseHtmlTextAsync(project.Id, input.HtmlText, input.ChangeNote);
+            await LoadProjectsAsync();
+        }
+        else
+        {
+            await LoadProjectsAsync();
+        }
+    }
+
+
+    private enum AndroidCreateUploadMode
+    {
+        Empty,
+        File,
+        HtmlText
+    }
+
+    private sealed class AndroidCreateProjectInput
+    {
+        public string Name { get; set; } = "";
+        public string Slug { get; set; } = "";
+        public bool Interactive { get; set; }
+        public bool AnalyticsEnabled { get; set; }
+        public AndroidCreateUploadMode Mode { get; set; }
+        public string HtmlText { get; set; } = "";
+        public string ChangeNote { get; set; } = "";
+    }
+
+    private System.Threading.Tasks.Task<AndroidCreateProjectInput?> PromptCreateProjectAsync()
+    {
+        var tcs = new System.Threading.Tasks.TaskCompletionSource<AndroidCreateProjectInput?>();
+        var scroll = new ScrollView(this);
+        var layout = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        layout.SetPadding(32, 12, 32, 0);
+        scroll.AddView(layout);
+
+        var name = new EditText(this) { Hint = "作品名称" };
+        name.ContentDescription = "作品名称";
+        layout.AddView(name);
+
+        var slug = new EditText(this) { Hint = "作品链接名" };
+        slug.ContentDescription = "作品链接名";
+        layout.AddView(slug);
+        var slugTouched = false;
+        name.TextChanged += (_, _) =>
+        {
+            if (!slugTouched) slug.Text = NormalizeSlug(name.Text ?? "");
+        };
+        slug.TextChanged += (_, _) => slugTouched = true;
+
+        var interactive = new CheckBox(this) { Text = "启用互动功能" };
+        interactive.ContentDescription = "启用互动功能";
+        layout.AddView(interactive);
+        layout.AddView(new TextView(this) { Text = "互动功能会启用作品数据接口，适合评论、留言、论坛、云存档等作品。" });
+
+        var analytics = new CheckBox(this) { Text = "启用访问量统计" };
+        analytics.ContentDescription = "启用访问量统计";
+        layout.AddView(analytics);
+        layout.AddView(new TextView(this) { Text = "访问量统计用于每日访问量和互动 API 请求统计。" });
+
+        var modeGroup = new RadioGroup(this) { Orientation = Orientation.Vertical };
+        var modeFile = new RadioButton(this) { Text = "创建后选择 HTML 或 ZIP 文件上传" };
+        var modeText = new RadioButton(this) { Text = "直接粘贴 HTML 代码" };
+        var modeEmpty = new RadioButton(this) { Text = "先只创建空作品，以后再上传" };
+        modeGroup.AddView(modeFile);
+        modeGroup.AddView(modeText);
+        modeGroup.AddView(modeEmpty);
+        modeFile.Checked = true;
+        layout.AddView(modeGroup);
+
+        var html = new EditText(this) { Hint = "HTML 代码" };
+        html.ContentDescription = "HTML 代码";
+        html.SetSingleLine(false);
+        html.SetMinLines(8);
+        html.InputType = InputTypes.ClassText | InputTypes.TextFlagMultiLine | InputTypes.TextFlagNoSuggestions;
+        html.Text = "<!doctype html>\n<html lang=\"zh-CN\">\n<head>\n  <meta charset=\"utf-8\">\n  <title>我的作品</title>\n</head>\n<body>\n  <h1>你好，PlayPage</h1>\n</body>\n</html>";
+        layout.AddView(html);
+
+        var changeNote = new EditText(this) { Hint = "更新内容，可留空" };
+        changeNote.ContentDescription = "更新内容";
+        layout.AddView(changeNote);
+
+        void UpdateHtmlEnabled()
+        {
+            html.Enabled = modeText.Checked;
+        }
+        modeGroup.CheckedChange += (_, _) => UpdateHtmlEnabled();
+        UpdateHtmlEnabled();
+
+        var status = new TextView(this) { Text = "先填写作品信息，再选择上传方式。" };
+        layout.AddView(status);
+
+        var dialog = new AlertDialog.Builder(this)
+            .SetTitle("创建作品")
+            .SetView(scroll)
+            .SetPositiveButton("创建作品", (sender, _) => { })
+            .SetNegativeButton("取消", (_, _) => tcs.TrySetResult(null))
+            .Create();
+
+        dialog.SetOnShowListener(new DialogShowListener(() =>
+        {
+            var ok = dialog.GetButton((int)DialogButtonType.Positive);
+            ok.Click += (_, _) =>
+            {
+                var projectName = name.Text?.Trim() ?? "";
+                var projectSlug = NormalizeSlug(slug.Text ?? "");
+                if (projectName.Length == 0)
+                {
+                    status.Text = "请先填写作品名称。";
+                    return;
+                }
+                if (projectSlug.Length == 0)
+                {
+                    status.Text = "请先填写作品链接名。";
+                    return;
+                }
+                if (modeText.Checked && string.IsNullOrWhiteSpace(html.Text))
+                {
+                    status.Text = "请先粘贴 HTML 代码。";
+                    return;
+                }
+
+                var mode = modeText.Checked ? AndroidCreateUploadMode.HtmlText : modeEmpty.Checked ? AndroidCreateUploadMode.Empty : AndroidCreateUploadMode.File;
+                tcs.TrySetResult(new AndroidCreateProjectInput
+                {
+                    Name = projectName,
+                    Slug = projectSlug,
+                    Interactive = interactive.Checked,
+                    AnalyticsEnabled = analytics.Checked,
+                    Mode = mode,
+                    HtmlText = html.Text ?? "",
+                    ChangeNote = changeNote.Text?.Trim() ?? ""
+                });
+                dialog.Dismiss();
+            };
+        }));
+        dialog.Show();
+        return tcs.Task;
+    }
+
+    private static string NormalizeSlug(string value)
+    {
+        var text = (value ?? "").Trim().ToLowerInvariant();
+        var builder = new System.Text.StringBuilder(text.Length);
+        var lastDash = false;
+        foreach (var ch in text)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '_' || ch == '.')
+            {
+                builder.Append(ch);
+                lastDash = false;
+            }
+            else if (!lastDash)
+            {
+                builder.Append('-');
+                lastDash = true;
+            }
+        }
+        return builder.ToString().Trim('-', '.', '_');
     }
 
     private void PickReleaseFile(ProjectSummary project)
