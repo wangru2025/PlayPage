@@ -4,7 +4,7 @@ using Android.Views;
 using Android.Widget;
 using PlayPage.Core;
 
-namespace PlayPage.Android;
+namespace PlayPage.Client.Android;
 
 [Activity(Label = "PlayPage", MainLauncher = true, Exported = true)]
 public sealed class MainActivity : Activity
@@ -26,12 +26,12 @@ public sealed class MainActivity : Activity
         root.SetPadding(32, 32, 32, 32);
 
         _email = new EditText(this) { Hint = "邮箱" };
-        _email.InputType = Android.Text.InputTypes.TextVariationEmailAddress;
+        _email.InputType = global::Android.Text.InputTypes.TextVariationEmailAddress;
         _email.ContentDescription = "邮箱";
         root.AddView(_email, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
 
         _password = new EditText(this) { Hint = "密码" };
-        _password.InputType = Android.Text.InputTypes.ClassText | Android.Text.InputTypes.TextVariationPassword;
+        _password.InputType = global::Android.Text.InputTypes.ClassText | global::Android.Text.InputTypes.TextVariationPassword;
         _password.ContentDescription = "密码";
         root.AddView(_password, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
 
@@ -82,6 +82,7 @@ public sealed class MainActivity : Activity
         if (_status == null) return;
         _status.Text = text;
         _status.ContentDescription = "状态：" + text;
-        _status.SendAccessibilityEvent(Android.Views.Accessibility.EventTypes.Announcement);
+        _status.SendAccessibilityEvent(global::Android.Views.Accessibility.EventTypes.Announcement);
     }
 }
+
