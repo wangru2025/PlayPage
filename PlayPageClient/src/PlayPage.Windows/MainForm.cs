@@ -28,6 +28,7 @@ public sealed class MainForm : Form
         MinimumSize = new Size(900, 560);
         AutoScaleMode = AutoScaleMode.Font;
         AccessibleName = "PlayPage 客户端主窗口";
+        Load += async (_, _) => await RestoreSessionAsync();
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(12) };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -127,6 +128,47 @@ public sealed class MainForm : Form
         Controls.Add(mainMenu);
     }
 
+    private async Task RestoreSessionAsync()
+    {
+        try
+        {
+            var token = LoadToken();
+            if (string.IsNullOrWhiteSpace(token)) return;
+            _client.SetToken(token);
+            var user = await _client.GetMeAsync();
+            _email.Text = user.Email;
+            _username.Text = user.Username;
+            SetStatus($"已自动登录：{user.Username}。", false);
+            await LoadProjectsAsync();
+        }
+        catch
+        {
+            SaveToken("");
+            _client.SetToken(null);
+            SetStatus("登录已过期，请重新发送验证码登录。", false);
+        }
+    }
+
+    private static string TokenFilePath()
+    {
+        var dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PlayPageClient");
+        System.IO.Directory.CreateDirectory(dir);
+        return System.IO.Path.Combine(dir, "access-token.txt");
+    }
+
+    private static string LoadToken()
+    {
+        var path = TokenFilePath();
+        return System.IO.File.Exists(path) ? System.IO.File.ReadAllText(path).Trim() : "";
+    }
+
+    private static void SaveToken(string token)
+    {
+        var path = TokenFilePath();
+        if (string.IsNullOrWhiteSpace(token)) System.IO.File.Delete(path);
+        else System.IO.File.WriteAllText(path, token.Trim());
+    }
+
     private async Task SendCodeAsync()
     {
         try
@@ -148,6 +190,7 @@ public sealed class MainForm : Form
             _verify.Enabled = false;
             SetStatus("正在登录。", false);
             var result = await _client.VerifyCodeAsync(_email.Text, _code.Text);
+            SaveToken(result.AccessToken);
             SetStatus($"已登录：{result.User.Username}。正在读取作品。", false);
             await LoadProjectsAsync();
         }

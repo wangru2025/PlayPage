@@ -58,6 +58,14 @@ public sealed class PlayPageApiClient
         if (!string.IsNullOrWhiteSpace(changeNote)) content.Add(new StringContent(changeNote, Encoding.UTF8), "changeNote");
         return SendAsync<ReleaseInfo>(HttpMethod.Post, ProjectPath(projectId, "releases") + "?mode=" + Uri.EscapeDataString(mode), cancellationToken, content);
     }
+    public Task<ReleaseInfo> UploadReleaseStreamAsync(string projectId, Stream fileStream, string fileName, string mode, string changeNote = "", CancellationToken cancellationToken = default)
+    {
+        var content = new MultipartFormDataContent();
+        content.Add(new StreamContent(fileStream), "file", string.IsNullOrWhiteSpace(fileName) ? "upload.html" : fileName);
+        if (!string.IsNullOrWhiteSpace(changeNote)) content.Add(new StringContent(changeNote, Encoding.UTF8), "changeNote");
+        return SendAsync<ReleaseInfo>(HttpMethod.Post, ProjectPath(projectId, "releases") + "?mode=" + Uri.EscapeDataString(mode), cancellationToken, content);
+    }
+
     public Task<ReleaseInfo> UploadReleaseHtmlTextAsync(string projectId, string html, string changeNote = "", CancellationToken cancellationToken = default) =>
         SendJsonAsync<ReleaseInfo>(HttpMethod.Post, ProjectPath(projectId, "releases") + "?mode=text", new { html, changeNote }, cancellationToken);
     public Task<ReleaseInfo> CreateReleaseFromTemplateAsync(string projectId, TemplateCreateReleaseRequest request, CancellationToken cancellationToken = default) =>
