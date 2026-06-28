@@ -57,12 +57,34 @@ public sealed partial class MainForm
             await ShowLoginDialogAsync();
             return;
         }
-        var name = Prompt.Show(this, "新建作品", "作品名称：");
-        if (string.IsNullOrWhiteSpace(name)) return;
-        var slug = Prompt.Show(this, "新建作品", "作品链接名，只能用字母数字短横线，留空则自动生成：");
-        var interactive = MessageBox.Show(this, "是否开启互动功能？", "新建作品", MessageBoxButtons.YesNo) == DialogResult.Yes;
-        var analytics = MessageBox.Show(this, "是否开启访问量统计？", "新建作品", MessageBoxButtons.YesNo) == DialogResult.Yes;
-        await _client.CreateProjectAsync(new ProjectCreateRequest { Name = name, Slug = slug, Interactive = interactive, AnalyticsEnabled = analytics });
+
+        using var form = new CreateProjectForm();
+        if (form.ShowDialog(this) != DialogResult.OK || form.Result == null) return;
+        var input = form.Result;
+
+        SetStatus("正在创建作品。", false);
+        var project = await _client.CreateProjectAsync(new ProjectCreateRequest
+        {
+            Name = input.Name,
+            Slug = input.Slug,
+            Interactive = input.Interactive,
+            AnalyticsEnabled = input.AnalyticsEnabled
+        });
+
+        if (input.UploadMode == CreateProjectUploadMode.File)
+        {
+            var ext = System.IO.Path.GetExtension(input.FilePath).ToLowerInvariant();
+            var mode = ext == ".zip" ? "zip" : "html";
+            SetStatus("正在上传作品文件。", false);
+            await _client.UploadReleaseFileAsync(project.Id, input.FilePath, mode, input.ChangeNote);
+        }
+        else if (input.UploadMode == CreateProjectUploadMode.HtmlText)
+        {
+            SetStatus("正在发布粘贴的 HTML。", false);
+            await _client.UploadReleaseHtmlTextAsync(project.Id, input.HtmlText, input.ChangeNote);
+        }
+
+        SetStatus("作品已创建。", false);
         await LoadProjectsAsync();
     }
 
