@@ -9,8 +9,37 @@ public sealed partial class MainForm
 {
     private async Task ShowTemplatesAsync()
     {
+        if (_currentUser == null)
+        {
+            await ShowLoginDialogAsync();
+            return;
+        }
         var items = await _client.ListTemplatesAsync();
-        MessageBox.Show(this, items.Count == 0 ? "暂无模板。" : string.Join("\n", items.Select(t => $"{t.Name} - {t.Summary}")), "模板市场");
+        if (items.Count == 0)
+        {
+            MessageBox.Show(this, "暂无模板。", "模板市场");
+            return;
+        }
+        using var form = new TemplateMarketForm(items);
+        if (form.ShowDialog(this) != DialogResult.OK || form.Result == null) return;
+        var input = form.Result;
+        SetStatus("正在创建模板作品。", false);
+        var project = await _client.CreateProjectAsync(new ProjectCreateRequest
+        {
+            Name = input.Name,
+            Slug = input.Slug,
+            Interactive = input.Interactive,
+            AnalyticsEnabled = input.AnalyticsEnabled
+        });
+        SetStatus("正在用模板发布作品。", false);
+        await _client.CreateReleaseFromTemplateAsync(project.Id, new TemplateCreateReleaseRequest
+        {
+            TemplateId = input.Template.Id,
+            Params = input.Params,
+            ChangeNote = input.ChangeNote
+        });
+        SetStatus("模板作品已创建。", false);
+        await LoadProjectsAsync();
     }
 
     private async Task SubmitTemplateAsync()
