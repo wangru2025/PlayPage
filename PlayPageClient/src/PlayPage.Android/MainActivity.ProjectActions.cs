@@ -21,7 +21,7 @@ public sealed partial class MainActivity
     {
         if (position < 0 || position >= _projectItems.Count) return;
         var project = _projectItems[position];
-        var actions = new[] { "打开作品", "查看详情", "切换广场显示", "上传新版本", "下载作品源码", "导出数据表", "申请修复", "查看修复申请", "AI 圆桌", "申请独立网址", "查看独立网址", "查看历史版本", "统计数据" };
+        var actions = new[] { "打开作品", "查看详情", "作品设置", "切换广场显示", "上传新版本", "下载作品源码", "导出数据表", "申请修复", "查看修复申请", "AI 圆桌", "申请独立网址", "查看独立网址", "查看历史版本", "统计数据" };
         new AlertDialog.Builder(this)
             .SetTitle(project.Name)
             .SetItems(actions, async (_, args) =>
@@ -78,6 +78,84 @@ public sealed partial class MainActivity
                 catch (System.Exception ex) { ShowError(ex); }
             })
             .Show();
+    }
+
+
+    private System.Threading.Tasks.Task<bool> EditSettingsAsync(ProjectSummary project)
+    {
+        var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+        var layout = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        layout.SetPadding(32, 12, 32, 0);
+
+        var name = new EditText(this) { Hint = "作品名称", Text = project.Name };
+        name.ContentDescription = "作品名称";
+        layout.AddView(name);
+
+        var slug = new EditText(this) { Hint = "作品链接名", Text = project.Slug };
+        slug.ContentDescription = "作品链接名";
+        layout.AddView(slug);
+
+        var interactive = new CheckBox(this) { Text = "启用互动功能", Checked = project.Interactive };
+        interactive.ContentDescription = "启用互动功能";
+        layout.AddView(interactive);
+
+        var analytics = new CheckBox(this) { Text = "启用访问量统计", Checked = project.AnalyticsEnabled };
+        analytics.ContentDescription = "启用访问量统计";
+        layout.AddView(analytics);
+
+        var status = new TextView(this) { Text = "修改后点击保存。" };
+        layout.AddView(status);
+
+        var dialog = new AlertDialog.Builder(this)
+            .SetTitle("作品设置")
+            .SetView(layout)
+            .SetPositiveButton("保存", (sender, _) => { })
+            .SetNegativeButton("取消", (_, _) => tcs.TrySetResult(false))
+            .Create();
+
+        dialog.SetOnShowListener(new DialogShowListener(() =>
+        {
+            var ok = dialog.GetButton((int)DialogButtonType.Positive);
+            ok.Click += async (_, _) =>
+            {
+                var nextName = name.Text?.Trim() ?? "";
+                var nextSlug = NormalizeSlug(slug.Text ?? "");
+                if (nextName.Length == 0)
+                {
+                    status.Text = "请填写作品名称。";
+                    return;
+                }
+                if (nextSlug.Length == 0)
+                {
+                    status.Text = "请填写作品链接名。";
+                    return;
+                }
+                try
+                {
+                    ok.Enabled = false;
+                    status.Text = "正在保存。";
+                    await _client.UpdateProjectSettingsAsync(project.Id, new ProjectSettingsRequest
+                    {
+                        Name = nextName,
+                        Slug = nextSlug,
+                        Interactive = interactive.Checked,
+                        AnalyticsEnabled = analytics.Checked
+                    });
+                    dialog.Dismiss();
+                    SetStatus("作品设置已保存。");
+                    await LoadProjectsAsync();
+                    tcs.TrySetResult(true);
+                }
+                catch (System.Exception ex)
+                {
+                    ok.Enabled = true;
+                    status.Text = "保存失败：" + ex.Message;
+                    Toast.MakeText(this, ex.Message, ToastLength.Long)?.Show();
+                }
+            };
+        }));
+        dialog.Show();
+        return tcs.Task;
     }
 
     private async System.Threading.Tasks.Task CreateProjectAsync()

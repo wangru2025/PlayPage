@@ -117,13 +117,17 @@ public sealed partial class MainForm
     {
         var p = SelectedProject();
         if (p == null) return;
-        var name = Prompt.Show(this, "作品设置", "作品名称：", p.Name);
-        if (string.IsNullOrWhiteSpace(name)) return;
-        var slug = Prompt.Show(this, "作品设置", "链接名：", p.Slug);
-        if (string.IsNullOrWhiteSpace(slug)) return;
-        var interactive = MessageBox.Show(this, "是否开启互动功能？", "作品设置", MessageBoxButtons.YesNo) == DialogResult.Yes;
-        var analytics = MessageBox.Show(this, "是否开启统计功能？", "作品设置", MessageBoxButtons.YesNo) == DialogResult.Yes;
-        await _client.UpdateProjectSettingsAsync(p.Id, new ProjectSettingsRequest { Name = name, Slug = slug, Interactive = interactive, AnalyticsEnabled = analytics });
+        using var form = new ProjectSettingsForm(p);
+        if (form.ShowDialog(this) != DialogResult.OK || form.Result == null) return;
+        var input = form.Result;
+        await _client.UpdateProjectSettingsAsync(p.Id, new ProjectSettingsRequest
+        {
+            Name = input.Name,
+            Slug = input.Slug,
+            Interactive = input.Interactive,
+            AnalyticsEnabled = input.AnalyticsEnabled
+        });
+        SetStatus("作品设置已保存。", false);
         await LoadProjectsAsync();
     }
 
