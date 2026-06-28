@@ -24,7 +24,7 @@ public sealed partial class MainActivity
     {
         if (position < 0 || position >= _projectItems.Count) return;
         var project = _projectItems[position];
-        var actions = new[] { "打开作品", "查看详情", "作品设置", "切换广场显示", "上传新版本", "下载作品源码", "管理互动数据", "导出数据表", "申请修复", "查看修复申请", "AI 圆桌", "申请独立网址", "查看独立网址", "查看历史版本", "统计数据", "删除作品" };
+        var actions = new[] { "打开作品", "查看详情", "作品设置", "切换广场显示", "上传新版本", "下载作品源码", "管理互动数据", "导出数据表", "申请修复", "查看修复申请", "申请独立网址", "查看独立网址", "查看历史版本", "统计数据", "删除作品" };
         new AlertDialog.Builder(this)
             .SetTitle(project.Name)
             .SetItems(actions, async (_, args) =>
@@ -66,22 +66,19 @@ public sealed partial class MainActivity
                             await ShowRepairRequestsAsync(project);
                             break;
                         case 10:
-                            await StartOrShowRepairAIAsync(project);
-                            break;
-                        case 11:
                             await CreateDomainAsync(project);
                             break;
-                        case 12:
+                        case 11:
                             await ShowDomainsAsync(project);
                             break;
-                        case 13:
+                        case 12:
                             await ShowReleasesAsync(project);
                             break;
-                        case 14:
+                        case 13:
                             var stats = await _client.GetProjectStatsAsync(project.Id);
                             ShowMessage("统计数据", $"访问量：{stats.TotalPageViews}\nAPI 请求：{stats.TotalApiRequests}\n成功：{stats.TotalApiSuccesses}\n失败：{stats.TotalApiFailures}\n成功率：{stats.ApiSuccessRate:P2}");
                             break;
-                        case 15:
+                        case 14:
                             await DeleteProjectAsync(project);
                             break;
                     }

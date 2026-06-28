@@ -30,8 +30,9 @@ public sealed partial class MainForm
     {
         var p = SelectedProject();
         if (p == null) return;
-        var items = await _client.ListRepairRequestsAsync(p.Id);
-        MessageBox.Show(this, items.Count == 0 ? "暂无修复申请。" : string.Join("\n\n", items.Select(x => $"{PlayPageDisplay.Status(x.Status)}｜{PlayPageDisplay.IssueType(x.IssueType)}\n{x.Description}\n管理员回复：{(string.IsNullOrWhiteSpace(x.AdminReply) ? "暂无" : x.AdminReply)}")), "修复申请");
+        using var form = new RepairRequestsForm(_client, p);
+        form.ShowDialog(this);
+        await Task.CompletedTask;
     }
 
     private async Task ShowDomainsAsync()
@@ -253,76 +254,5 @@ public sealed partial class MainForm
         SetStatus("数据表已导出。", false);
     }
 
-    private async Task<RepairRequestInfo?> FirstRepairRequestAsync(ProjectSummary project)
-    {
-        var repairs = await _client.ListRepairRequestsAsync(project.Id);
-        if (repairs.Count == 0)
-        {
-            MessageBox.Show(this, "这个作品还没有修复申请。", "AI 圆桌");
-            return null;
-        }
-        return repairs[0];
-    }
 
-    private async Task StartOrShowRepairAIAsync()
-    {
-        var p = SelectedProject();
-        if (p == null) return;
-        var repair = await FirstRepairRequestAsync(p);
-        if (repair == null) return;
-        try
-        {
-            var latest = await _client.GetLatestRepairAIAsync(p.Id, repair.Id);
-            ShowAIState(latest);
-        }
-        catch
-        {
-            if (MessageBox.Show(this, "还没有 AI 圆桌记录，是否立即启动？", "AI 圆桌", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
-            var started = await _client.StartRepairAIAsync(p.Id, repair.Id);
-            ShowAIState(started);
-        }
-    }
-
-    private async Task PreviewRepairAIAsync()
-    {
-        var p = SelectedProject();
-        if (p == null) return;
-        var repair = await FirstRepairRequestAsync(p);
-        if (repair == null) return;
-        var state = await _client.CreateRepairAIPreviewAsync(p.Id, repair.Id);
-        if (!string.IsNullOrWhiteSpace(state.Url))
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = state.Url, UseShellExecute = true });
-        }
-        ShowAIState(state);
-    }
-
-    private async Task PublishRepairAIAsync()
-    {
-        var p = SelectedProject();
-        if (p == null) return;
-        var repair = await FirstRepairRequestAsync(p);
-        if (repair == null) return;
-        if (MessageBox.Show(this, "确认发布 AI 修复版本？", "发布 AI 修复", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
-        var state = await _client.PublishRepairAIAsync(p.Id, repair.Id);
-        ShowAIState(state);
-        await LoadProjectsAsync();
-    }
-
-    private void ShowAIState(RepairAIState state)
-    {
-        var lines = new List<string>();
-        lines.Add($"状态：{PlayPageDisplay.AiStatus(state.Job.Status)}；第 {state.Job.Round} 轮");
-        if (!string.IsNullOrWhiteSpace(state.Job.ErrorMessage)) lines.Add("错误：" + state.Job.ErrorMessage);
-        if (!string.IsNullOrWhiteSpace(state.Job.PreviewUrl)) lines.Add("预览：" + state.Job.PreviewUrl);
-        if (!string.IsNullOrWhiteSpace(state.Message)) lines.Add(state.Message);
-        lines.Add("");
-        foreach (var message in state.Messages.TakeLast(20))
-        {
-            lines.Add($"{message.MessageSeq}. {message.AgentName}");
-            lines.Add(message.Content);
-            lines.Add("");
-        }
-        MessageBox.Show(this, string.Join("\n", lines), "AI 圆桌");
-    }
 }
