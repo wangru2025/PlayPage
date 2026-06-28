@@ -171,6 +171,7 @@ public sealed partial class MainForm : Form
             {
                 _client.SetToken(token);
                 _currentUser = await _client.GetMeAsync();
+                if (!await EnsureProfileAsync()) return;
                 UpdateUserLabel();
                 SetMainActionsEnabled(true);
                 await LoadProjectsAsync();
@@ -187,7 +188,7 @@ public sealed partial class MainForm : Form
         await ShowLoginDialogAsync();
     }
 
-    private Task ShowLoginDialogAsync()
+    private async Task ShowLoginDialogAsync()
     {
         using var login = new LoginForm(_client);
         if (login.ShowDialog(this) != DialogResult.OK || login.Result == null)
@@ -195,14 +196,15 @@ public sealed partial class MainForm : Form
             SetStatus("未登录。请从“文件”菜单选择退出，或重新打开程序登录。", true);
             _userLabel.Text = "未登录";
             SetMainActionsEnabled(false);
-            return Task.CompletedTask;
+            return;
         }
 
         SaveToken(login.Result.AccessToken);
         _currentUser = login.Result.User;
+        if (!await EnsureProfileAsync()) return;
         UpdateUserLabel();
         SetMainActionsEnabled(true);
-        return LoadProjectsAsync();
+        await LoadProjectsAsync();
     }
 
     private async Task LogoutAsync()
@@ -293,6 +295,30 @@ public sealed partial class MainForm : Form
         var p = SelectedProject();
         if (p == null || string.IsNullOrWhiteSpace(p.PublicUrl)) return;
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = p.PublicUrl, UseShellExecute = true });
+    }
+
+
+    private async Task<bool> EnsureProfileAsync()
+    {
+        while (_currentUser != null && string.IsNullOrWhiteSpace(_currentUser.Username))
+        {
+            var username = Prompt.Show(this, "设置公开名字", "请输入你的公开名字。这个名字会显示在作品、模板和评论旁边：");
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                MessageBox.Show(this, "新账号需要先设置公开名字，才能继续使用 PlayPage。", "PlayPage", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                continue;
+            }
+            try
+            {
+                _currentUser = await _client.UpdateProfileAsync(username);
+                SetStatus("公开名字已保存。", false);
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+        return _currentUser != null && !string.IsNullOrWhiteSpace(_currentUser.Username);
     }
 
     private void UpdateUserLabel()
