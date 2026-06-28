@@ -1,3 +1,4 @@
+using System.Linq;
 using Android.App;
 using Android.OS;
 using Android.Views;
@@ -207,7 +208,7 @@ public sealed class MainActivity : Activity
     private async System.Threading.Tasks.Task ShowTemplatesAsync()
     {
         var items = await _client.ListTemplatesAsync();
-        var text = items.Count == 0 ? "暂无模板。" : string.Join("\n", items.ConvertAll(t => $"{t.Name} - {t.Summary}"));
+        var text = items.Count == 0 ? "暂无模板。" : string.Join("\n", items.Select(t => $"{t.Name} - {t.Summary}"));
         ShowMessage("模板市场", text);
     }
 
@@ -260,7 +261,7 @@ public sealed class MainActivity : Activity
     private async System.Threading.Tasks.Task ShowDomainsAsync(ProjectSummary project)
     {
         var domains = await _client.ListDomainsAsync(project.Id);
-        ShowMessage("独立网址", domains.Count == 0 ? "暂无独立网址申请。" : string.Join("\n", domains.ConvertAll(d => $"{d.Domain} - {d.Status}")));
+        ShowMessage("独立网址", domains.Count == 0 ? "暂无独立网址申请。" : string.Join("\n", domains.Select(d => $"{d.Domain} - {d.Status}")));
     }
 
     private void ShowAIState(RepairAIState state)
@@ -303,3 +304,4 @@ public sealed class MainActivity : Activity
         _status.SendAccessibilityEvent(global::Android.Views.Accessibility.EventTypes.Announcement);
     }
 }
+
