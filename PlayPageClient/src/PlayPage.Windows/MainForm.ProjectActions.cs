@@ -14,7 +14,7 @@ public sealed partial class MainForm
         var p = SelectedProject();
         if (p == null) return;
         var detail = await _client.GetProjectAsync(p.Id);
-        MessageBox.Show(this, $"作品名：{detail.Project.Name}\n地址：{detail.Project.PublicUrl}\n互动功能：{(detail.Project.Interactive ? "开" : "关")}\n统计功能：{(detail.Project.AnalyticsEnabled ? "开" : "关")}\n可见性：{detail.Project.Visibility}", "作品详情");
+        MessageBox.Show(this, $"作品名：{detail.Project.Name}\n地址：{detail.Project.PublicUrl}\n互动功能：{PlayPageDisplay.YesNo(detail.Project.Interactive)}\n统计功能：{PlayPageDisplay.YesNo(detail.Project.AnalyticsEnabled)}\n广场显示：{PlayPageDisplay.Visibility(detail.Project.Visibility)}", "作品详情");
     }
 
     private async Task ToggleVisibilityAsync()
@@ -31,7 +31,7 @@ public sealed partial class MainForm
         var p = SelectedProject();
         if (p == null) return;
         var items = await _client.ListRepairRequestsAsync(p.Id);
-        MessageBox.Show(this, items.Count == 0 ? "暂无修复申请。" : string.Join("\n\n", items), "修复申请");
+        MessageBox.Show(this, items.Count == 0 ? "暂无修复申请。" : string.Join("\n\n", items.Select(x => $"{PlayPageDisplay.Status(x.Status)}｜{PlayPageDisplay.IssueType(x.IssueType)}\n{x.Description}\n管理员回复：{(string.IsNullOrWhiteSpace(x.AdminReply) ? "暂无" : x.AdminReply)}")), "修复申请");
     }
 
     private async Task ShowDomainsAsync()
@@ -312,7 +312,7 @@ public sealed partial class MainForm
     private void ShowAIState(RepairAIState state)
     {
         var lines = new List<string>();
-        lines.Add($"状态：{state.Job.Status}；第 {state.Job.Round} 轮");
+        lines.Add($"状态：{PlayPageDisplay.AiStatus(state.Job.Status)}；第 {state.Job.Round} 轮");
         if (!string.IsNullOrWhiteSpace(state.Job.ErrorMessage)) lines.Add("错误：" + state.Job.ErrorMessage);
         if (!string.IsNullOrWhiteSpace(state.Job.PreviewUrl)) lines.Add("预览：" + state.Job.PreviewUrl);
         if (!string.IsNullOrWhiteSpace(state.Message)) lines.Add(state.Message);

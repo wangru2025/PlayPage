@@ -269,8 +269,8 @@ public sealed partial class MainForm : Form
         var upgrades = await _client.ListMyUpgradeRequestsAsync();
         var requestText = upgrades.Count == 0
             ? "暂无升级申请。"
-            : string.Join("\n", upgrades.Take(10).Select(x => $"{x.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm}｜{x.TargetPlan}｜{x.Status}｜{x.AdminNote}"));
-        var message = $"邮箱：{_currentUser.Email}\n公开名字：{_currentUser.Username}\n套餐：{_currentUser.PlanCode}\n角色：{_currentUser.Role}\n状态：{_currentUser.Status}\n\n最近升级申请：\n{requestText}\n\n点“是”修改公开名字，点“否”提交升级申请，点“取消”关闭。";
+            : string.Join("\n", upgrades.Take(10).Select(x => $"{x.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm}｜{PlayPageDisplay.Plan(x.TargetPlan)}｜{PlayPageDisplay.Status(x.Status)}｜{x.AdminNote}"));
+        var message = $"邮箱：{_currentUser.Email}\n公开名字：{_currentUser.Username}\n套餐：{PlayPageDisplay.Plan(_currentUser.PlanCode)}\n账号身份：{PlayPageDisplay.Role(_currentUser.Role)}\n账号状态：{PlayPageDisplay.Status(_currentUser.Status)}\n\n最近升级申请：\n{requestText}\n\n点“是”修改公开名字，点“否”开通或升级套餐，点“取消”关闭。";
         var result = MessageBox.Show(this, message, "个人中心", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Information);
         if (result == DialogResult.Yes)
         {
@@ -289,17 +289,16 @@ public sealed partial class MainForm : Form
 
     private async Task CreateUpgradeRequestAsync()
     {
-        var targetPlan = Prompt.Show(this, "升级套餐", "目标套餐代码，例如 light 或 pro：", "light");
-        if (string.IsNullOrWhiteSpace(targetPlan)) return;
-        var payment = Prompt.Show(this, "升级套餐", "付款方式，例如 wechat、alipay，可留空：", "wechat") ?? "wechat";
-        var note = Prompt.Show(this, "升级套餐", "付款备注、转账昵称或其他说明，可留空：") ?? "";
+        using var form = new UpgradePlanForm();
+        if (form.ShowDialog(this) != DialogResult.OK || form.Result == null) return;
+        var input = form.Result;
         var created = await _client.CreateUpgradeRequestAsync(new UpgradeRequestCreateRequest
         {
-            TargetPlan = targetPlan.Trim(),
-            PaymentMethod = string.IsNullOrWhiteSpace(payment) ? "wechat" : payment.Trim(),
-            PayerNote = note.Trim()
+            TargetPlan = input.TargetPlan,
+            PaymentMethod = input.PaymentMethod,
+            PayerNote = input.PayerNote
         });
-        SetStatus($"升级申请已提交：{created.TargetPlan}，状态 {created.Status}。", false);
+        SetStatus($"升级申请已提交：{PlayPageDisplay.Plan(created.TargetPlan)}，当前状态：{PlayPageDisplay.Status(created.Status)}。", false);
     }
 
     private async Task LoadProjectsAsync()
@@ -315,9 +314,9 @@ public sealed partial class MainForm : Form
             {
                 var item = new ListViewItem(project.Name);
                 item.SubItems.Add(project.Slug);
-                item.SubItems.Add(project.Visibility == "public" ? "公开" : "不公开");
-                item.SubItems.Add(project.Interactive ? "开" : "关");
-                item.SubItems.Add(project.AnalyticsEnabled ? "开" : "关");
+                item.SubItems.Add(PlayPageDisplay.Visibility(project.Visibility));
+                item.SubItems.Add(PlayPageDisplay.YesNo(project.Interactive));
+                item.SubItems.Add(PlayPageDisplay.YesNo(project.AnalyticsEnabled));
                 item.SubItems.Add(project.PublicUrl);
                 item.Tag = project;
                 _projects.Items.Add(item);

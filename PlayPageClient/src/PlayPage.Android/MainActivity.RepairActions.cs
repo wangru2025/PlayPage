@@ -39,7 +39,7 @@ public sealed partial class MainActivity
 
     private void ShowAIState(RepairAIState state)
     {
-        var lines = new System.Collections.Generic.List<string> { $"状态：{state.Job.Status}；第 {state.Job.Round} 轮" };
+        var lines = new System.Collections.Generic.List<string> { $"状态：{PlayPageDisplay.AiStatus(state.Job.Status)}；第 {state.Job.Round} 轮" };
         foreach (var message in state.Messages)
         {
             lines.Add($"{message.MessageSeq}. {message.AgentName}");
@@ -66,8 +66,8 @@ public sealed partial class MainActivity
             return;
         }
 
-        var actions = domains.Select(d => $"申请删除：{d.Domain}（{d.Status}）")
-            .Concat(deleteRequests.Select(r => $"删除申请：{r.Domain}（{r.Status}）"))
+        var actions = domains.Select(d => $"申请删除：{d.Domain}（{PlayPageDisplay.Status(d.Status)}）")
+            .Concat(deleteRequests.Select(r => $"删除申请：{r.Domain}（{PlayPageDisplay.Status(r.Status)}）"))
             .ToArray();
         new AlertDialog.Builder(this)
             .SetTitle("独立网址")

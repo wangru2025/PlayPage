@@ -38,7 +38,7 @@ public sealed partial class MainActivity
                             break;
                         case 1:
                             var detail = await _client.GetProjectAsync(project.Id);
-                            ShowMessage("作品详情", $"地址：{detail.Project.PublicUrl}\n互动：{detail.Project.Interactive}\n统计：{detail.Project.AnalyticsEnabled}\n可见性：{detail.Project.Visibility}");
+                            ShowMessage("作品详情", $"地址：{detail.Project.PublicUrl}\n互动功能：{PlayPageDisplay.YesNo(detail.Project.Interactive)}\n访问统计：{PlayPageDisplay.YesNo(detail.Project.AnalyticsEnabled)}\n广场显示：{PlayPageDisplay.Visibility(detail.Project.Visibility)}");
                             break;
                         case 2:
                             await EditSettingsAsync(project);
@@ -79,7 +79,7 @@ public sealed partial class MainActivity
                             break;
                         case 14:
                             var stats = await _client.GetProjectStatsAsync(project.Id);
-                            ShowMessage("统计数据", $"访问量：{stats.TotalPageViews}\nAPI 请求：{stats.TotalApiRequests}\n成功：{stats.TotalApiSuccesses}\n失败：{stats.TotalApiFailures}");
+                            ShowMessage("统计数据", $"访问量：{stats.TotalPageViews}\nAPI 请求：{stats.TotalApiRequests}\n成功：{stats.TotalApiSuccesses}\n失败：{stats.TotalApiFailures}\n成功率：{stats.ApiSuccessRate:P2}");
                             break;
                         case 15:
                             await DeleteProjectAsync(project);

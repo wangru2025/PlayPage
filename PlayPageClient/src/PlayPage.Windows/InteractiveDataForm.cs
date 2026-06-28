@@ -223,7 +223,7 @@ public sealed class InteractiveDataForm : Form
             foreach (var record in records.OrderByDescending(x => x.CreatedAt))
             {
                 var row = new ListViewItem(record.Id);
-                row.SubItems.Add(record.Status);
+                row.SubItems.Add(PlayPageDisplay.Status(record.Status));
                 row.SubItems.Add(record.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss"));
                 row.SubItems.Add(JsonSerializer.Serialize(record.Data, JsonOptions).Replace("\r", "").Replace("\n", " "));
                 _records.Items.Add(row);

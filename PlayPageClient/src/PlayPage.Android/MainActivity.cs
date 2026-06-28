@@ -114,8 +114,8 @@ public sealed partial class MainActivity : Activity
         var upgrades = await _client.ListMyUpgradeRequestsAsync();
         var requestText = upgrades.Count == 0
             ? "暂无升级申请。"
-            : string.Join("\n", upgrades.Take(10).Select(x => $"{x.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm}｜{x.TargetPlan}｜{x.Status}｜{x.AdminNote}"));
-        var message = $"邮箱：{_currentUser.Email}\n公开名字：{_currentUser.Username}\n套餐：{_currentUser.PlanCode}\n角色：{_currentUser.Role}\n状态：{_currentUser.Status}\n\n最近升级申请：\n{requestText}";
+            : string.Join("\n", upgrades.Take(10).Select(x => $"{x.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm}｜{PlayPageDisplay.Plan(x.TargetPlan)}｜{PlayPageDisplay.Status(x.Status)}｜{x.AdminNote}"));
+        var message = $"邮箱：{_currentUser.Email}\n公开名字：{_currentUser.Username}\n套餐：{PlayPageDisplay.Plan(_currentUser.PlanCode)}\n账号身份：{PlayPageDisplay.Role(_currentUser.Role)}\n账号状态：{PlayPageDisplay.Status(_currentUser.Status)}\n\n最近升级申请：\n{requestText}";
         new AlertDialog.Builder(this)
             .SetTitle("个人中心")
             .SetMessage(message)
@@ -142,17 +142,67 @@ public sealed partial class MainActivity : Activity
 
     private async System.Threading.Tasks.Task CreateUpgradeRequestAsync()
     {
-        var targetPlan = await PromptAsync("升级套餐", "目标套餐代码，例如 light 或 pro");
-        if (string.IsNullOrWhiteSpace(targetPlan)) return;
-        var payment = await PromptAsync("升级套餐", "付款方式，例如 wechat、alipay，可留空");
-        var note = await PromptAsync("升级套餐", "付款备注、转账昵称或其他说明，可留空");
+        var input = await PromptUpgradePlanAsync();
+        if (input == null) return;
         var created = await _client.CreateUpgradeRequestAsync(new UpgradeRequestCreateRequest
         {
-            TargetPlan = targetPlan.Trim(),
-            PaymentMethod = string.IsNullOrWhiteSpace(payment) ? "wechat" : payment.Trim(),
-            PayerNote = note?.Trim() ?? ""
+            TargetPlan = input.TargetPlan,
+            PaymentMethod = input.PaymentMethod,
+            PayerNote = input.PayerNote
         });
-        SetStatus($"升级申请已提交：{created.TargetPlan}，状态 {created.Status}。");
+        SetStatus($"升级申请已提交：{PlayPageDisplay.Plan(created.TargetPlan)}，当前状态：{PlayPageDisplay.Status(created.Status)}。");
+    }
+
+    private System.Threading.Tasks.Task<AndroidUpgradePlanInput?> PromptUpgradePlanAsync()
+    {
+        var tcs = new System.Threading.Tasks.TaskCompletionSource<AndroidUpgradePlanInput?>();
+        var layout = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        layout.SetPadding(32, 12, 32, 0);
+
+        var planGroup = new RadioGroup(this) { Orientation = Orientation.Vertical };
+        var light = new RadioButton(this) { Text = "轻享版，3 元 / 月。最多 10 个作品；每作品 30 MB 互动数据；每月 100000 次查询；每月 10000 次写入。", Id = 1001 };
+        var support = new RadioButton(this) { Text = "支持版，6 元 / 月。最多 30 个作品；每作品 100 MB 互动数据；每月 500000 次查询；每月 50000 次写入。", Id = 1002 };
+        planGroup.AddView(light);
+        planGroup.AddView(support);
+        planGroup.Check(light.Id);
+        layout.AddView(new TextView(this) { Text = "选择套餐" });
+        layout.AddView(planGroup);
+
+        var payGroup = new RadioGroup(this) { Orientation = Orientation.Vertical };
+        var wechat = new RadioButton(this) { Text = "微信支付", Id = 2001 };
+        var alipay = new RadioButton(this) { Text = "支付宝", Id = 2002 };
+        payGroup.AddView(wechat);
+        payGroup.AddView(alipay);
+        payGroup.Check(wechat.Id);
+        layout.AddView(new TextView(this) { Text = "选择支付方式" });
+        layout.AddView(payGroup);
+
+        var note = new EditText(this) { Hint = "付款备注、转账昵称或其他说明，可留空" };
+        note.ContentDescription = "付款备注";
+        layout.AddView(note);
+
+        new AlertDialog.Builder(this)
+            .SetTitle("开通或升级套餐")
+            .SetView(layout)
+            .SetPositiveButton("提交申请", (_, _) =>
+            {
+                tcs.TrySetResult(new AndroidUpgradePlanInput
+                {
+                    TargetPlan = planGroup.CheckedRadioButtonId == support.Id ? "support" : "light",
+                    PaymentMethod = payGroup.CheckedRadioButtonId == alipay.Id ? "alipay" : "wechat",
+                    PayerNote = note.Text?.Trim() ?? ""
+                });
+            })
+            .SetNegativeButton("取消", (_, _) => tcs.TrySetResult(null))
+            .Show();
+        return tcs.Task;
+    }
+
+    private sealed class AndroidUpgradePlanInput
+    {
+        public string TargetPlan { get; set; } = "light";
+        public string PaymentMethod { get; set; } = "wechat";
+        public string PayerNote { get; set; } = "";
     }
 
     private async System.Threading.Tasks.Task LoadProjectsAsync()
@@ -168,9 +218,9 @@ public sealed partial class MainActivity : Activity
             _adapter?.Clear();
             foreach (var project in _projectItems)
             {
-                var visibility = project.Visibility == "public" ? "公开" : "不公开";
-                var interactive = project.Interactive ? "互动开" : "互动关";
-                var analytics = project.AnalyticsEnabled ? "统计开" : "统计关";
+                var visibility = PlayPageDisplay.Visibility(project.Visibility);
+                var interactive = "互动功能" + PlayPageDisplay.YesNo(project.Interactive);
+                var analytics = "访问统计" + PlayPageDisplay.YesNo(project.AnalyticsEnabled);
                 _adapter?.Add($"{project.Name}\n{project.Slug}，{visibility}，{interactive}，{analytics}");
             }
             SetStatus(_projectItems.Count == 0 ? "还没有作品。可以点击创建作品。" : $"已读取 {_projectItems.Count} 个作品。点击作品可操作。");

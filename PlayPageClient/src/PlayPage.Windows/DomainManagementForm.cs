@@ -74,13 +74,13 @@ public sealed class DomainManagementForm : Form
     {
         public DomainItem(ProjectDomainInfo value) => Value = value;
         public ProjectDomainInfo Value { get; }
-        public override string ToString() => $"{Value.Domain}｜{Value.Status}";
+        public override string ToString() => $"{Value.Domain}｜{PlayPageDisplay.Status(Value.Status)}";
     }
 
     private sealed class DeleteRequestItem
     {
         public DeleteRequestItem(ProjectDomainDeleteRequestInfo value) => Value = value;
         public ProjectDomainDeleteRequestInfo Value { get; }
-        public override string ToString() => $"{Value.Domain}｜{Value.Status}｜{Value.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm}";
+        public override string ToString() => $"{Value.Domain}｜{PlayPageDisplay.Status(Value.Status)}｜{Value.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm}";
     }
 }
