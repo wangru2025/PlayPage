@@ -31,3 +31,7 @@ tmp_*.html
 PlayPageClient/**/bin/
 PlayPageClient/**/obj/
 PlayPageClient/artifacts/
+# Android signing keys - never commit
+PlayPageClient/signing/
+*.keystore
+*.jks

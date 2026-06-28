@@ -75,27 +75,23 @@ jobs:
       - name: Restore
         run: dotnet restore src/PlayPage.Android/PlayPage.Android.csproj
 
-      - name: Generate Android signing key
+      - name: Restore Android release signing key
         shell: bash
         run: |
-          keytool -genkeypair -v \
-            -keystore playpage-ci.keystore \
-            -alias playpage \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass playpage-ci-pass \
-            -keypass playpage-ci-pass \
-            -dname "CN=PlayPage CI,O=PlayPage,L=Internet,S=Internet,C=CN"
+          if [ -z "${{ secrets.PLAYPAGE_ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Missing PLAYPAGE_ANDROID_KEYSTORE_BASE64 secret" >&2
+            exit 1
+          fi
+          echo "${{ secrets.PLAYPAGE_ANDROID_KEYSTORE_BASE64 }}" | base64 -d > playpage-release.keystore
 
       - name: Build signed APK
         run: >-
           dotnet build src/PlayPage.Android/PlayPage.Android.csproj -c Release --no-restore
           -p:AndroidKeyStore=true
-          -p:AndroidSigningKeyStore=${{ github.workspace }}/PlayPageClient/playpage-ci.keystore
-          -p:AndroidSigningStorePass=playpage-ci-pass
-          -p:AndroidSigningKeyAlias=playpage
-          -p:AndroidSigningKeyPass=playpage-ci-pass
+          -p:AndroidSigningKeyStore=${{ github.workspace }}/PlayPageClient/playpage-release.keystore
+          -p:AndroidSigningStorePass=${{ secrets.PLAYPAGE_ANDROID_KEYSTORE_PASSWORD }}
+          -p:AndroidSigningKeyAlias=${{ secrets.PLAYPAGE_ANDROID_KEY_ALIAS }}
+          -p:AndroidSigningKeyPass=${{ secrets.PLAYPAGE_ANDROID_KEY_PASSWORD }}
 
       - name: Collect and verify APK
         shell: bash
