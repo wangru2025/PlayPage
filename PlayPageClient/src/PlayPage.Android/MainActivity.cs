@@ -1,3 +1,4 @@
+using System.Linq;
 using Android.App;
 using Android.OS;
 using Android.Views;
@@ -75,6 +76,7 @@ public sealed partial class MainActivity : Activity
         menu.Add("新建作品");
         menu.Add("模板市场");
         menu.Add("投稿模板");
+        menu.Add("个人中心");
         menu.Add("管理摘要");
         menu.Add("退出登录");
         return true;
@@ -93,10 +95,64 @@ public sealed partial class MainActivity : Activity
             if (title == "新建作品") await CreateProjectAsync();
             else if (title == "模板市场") await ShowTemplatesAsync();
             else if (title == "投稿模板") await SubmitTemplateAsync();
+            else if (title == "个人中心") await ShowAccountCenterAsync();
             else if (title == "管理摘要") await ShowAdminSummaryAsync();
             else if (title == "退出登录") await LogoutAsync();
         }
         catch (System.Exception ex) { ShowError(ex); }
+    }
+
+    private async System.Threading.Tasks.Task ShowAccountCenterAsync()
+    {
+        if (_currentUser == null)
+        {
+            await ShowLoginDialogAsync();
+            if (_currentUser == null) return;
+        }
+        _currentUser = await _client.GetMeAsync();
+        UpdateAccountLabel();
+        var upgrades = await _client.ListMyUpgradeRequestsAsync();
+        var requestText = upgrades.Count == 0
+            ? "暂无升级申请。"
+            : string.Join("\n", upgrades.Take(10).Select(x => $"{x.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm}｜{x.TargetPlan}｜{x.Status}｜{x.AdminNote}"));
+        var message = $"邮箱：{_currentUser.Email}\n公开名字：{_currentUser.Username}\n套餐：{_currentUser.PlanCode}\n角色：{_currentUser.Role}\n状态：{_currentUser.Status}\n\n最近升级申请：\n{requestText}";
+        new AlertDialog.Builder(this)
+            .SetTitle("个人中心")
+            .SetMessage(message)
+            .SetPositiveButton("改名字", async (_, _) =>
+            {
+                try
+                {
+                    var username = await PromptAsync("修改公开名字", "新的公开名字");
+                    if (string.IsNullOrWhiteSpace(username)) return;
+                    _currentUser = await _client.UpdateProfileAsync(username.Trim());
+                    UpdateAccountLabel();
+                    SetStatus("公开名字已更新。");
+                }
+                catch (System.Exception ex) { ShowError(ex); }
+            })
+            .SetNeutralButton("升级套餐", async (_, _) =>
+            {
+                try { await CreateUpgradeRequestAsync(); }
+                catch (System.Exception ex) { ShowError(ex); }
+            })
+            .SetNegativeButton("关闭", (_, _) => { })
+            .Show();
+    }
+
+    private async System.Threading.Tasks.Task CreateUpgradeRequestAsync()
+    {
+        var targetPlan = await PromptAsync("升级套餐", "目标套餐代码，例如 light 或 pro");
+        if (string.IsNullOrWhiteSpace(targetPlan)) return;
+        var payment = await PromptAsync("升级套餐", "付款方式，例如 wechat、alipay，可留空");
+        var note = await PromptAsync("升级套餐", "付款备注、转账昵称或其他说明，可留空");
+        var created = await _client.CreateUpgradeRequestAsync(new UpgradeRequestCreateRequest
+        {
+            TargetPlan = targetPlan.Trim(),
+            PaymentMethod = string.IsNullOrWhiteSpace(payment) ? "wechat" : payment.Trim(),
+            PayerNote = note?.Trim() ?? ""
+        });
+        SetStatus($"升级申请已提交：{created.TargetPlan}，状态 {created.Status}。");
     }
 
     private async System.Threading.Tasks.Task LoadProjectsAsync()

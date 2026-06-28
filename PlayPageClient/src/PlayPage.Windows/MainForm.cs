@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using PlayPage.Core;
@@ -45,6 +46,7 @@ public sealed partial class MainForm : Form
         fileMenu.DropDownItems.Add("刷新作品(&R)", null, async (_, _) => await LoadProjectsAsync());
         fileMenu.DropDownItems.Add("模板市场(&T)", null, async (_, _) => await ShowTemplatesAsync());
         fileMenu.DropDownItems.Add("投稿模板(&M)", null, async (_, _) => await SubmitTemplateAsync());
+        fileMenu.DropDownItems.Add("个人中心(&C)", null, async (_, _) => await ShowAccountCenterAsync());
         fileMenu.DropDownItems.Add("退出登录(&L)", null, async (_, _) => await LogoutAsync());
         fileMenu.DropDownItems.Add("退出(&X)", null, (_, _) => Close());
 
@@ -254,6 +256,50 @@ public sealed partial class MainForm : Form
         {
             System.IO.File.WriteAllText(path, token.Trim());
         }
+    }
+
+    private async Task ShowAccountCenterAsync()
+    {
+        if (_currentUser == null)
+        {
+            await ShowLoginDialogAsync();
+            if (_currentUser == null) return;
+        }
+        _currentUser = await _client.GetMeAsync();
+        var upgrades = await _client.ListMyUpgradeRequestsAsync();
+        var requestText = upgrades.Count == 0
+            ? "暂无升级申请。"
+            : string.Join("\n", upgrades.Take(10).Select(x => $"{x.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm}｜{x.TargetPlan}｜{x.Status}｜{x.AdminNote}"));
+        var message = $"邮箱：{_currentUser.Email}\n公开名字：{_currentUser.Username}\n套餐：{_currentUser.PlanCode}\n角色：{_currentUser.Role}\n状态：{_currentUser.Status}\n\n最近升级申请：\n{requestText}\n\n点“是”修改公开名字，点“否”提交升级申请，点“取消”关闭。";
+        var result = MessageBox.Show(this, message, "个人中心", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Information);
+        if (result == DialogResult.Yes)
+        {
+            var username = Prompt.Show(this, "修改公开名字", "请输入新的公开名字：", _currentUser.Username);
+            if (string.IsNullOrWhiteSpace(username)) return;
+            _currentUser = await _client.UpdateProfileAsync(username.Trim());
+            UpdateUserLabel();
+            SetStatus("公开名字已更新。", false);
+            return;
+        }
+        if (result == DialogResult.No)
+        {
+            await CreateUpgradeRequestAsync();
+        }
+    }
+
+    private async Task CreateUpgradeRequestAsync()
+    {
+        var targetPlan = Prompt.Show(this, "升级套餐", "目标套餐代码，例如 light 或 pro：", "light");
+        if (string.IsNullOrWhiteSpace(targetPlan)) return;
+        var payment = Prompt.Show(this, "升级套餐", "付款方式，例如 wechat、alipay，可留空：", "wechat") ?? "wechat";
+        var note = Prompt.Show(this, "升级套餐", "付款备注、转账昵称或其他说明，可留空：") ?? "";
+        var created = await _client.CreateUpgradeRequestAsync(new UpgradeRequestCreateRequest
+        {
+            TargetPlan = targetPlan.Trim(),
+            PaymentMethod = string.IsNullOrWhiteSpace(payment) ? "wechat" : payment.Trim(),
+            PayerNote = note.Trim()
+        });
+        SetStatus($"升级申请已提交：{created.TargetPlan}，状态 {created.Status}。", false);
     }
 
     private async Task LoadProjectsAsync()
