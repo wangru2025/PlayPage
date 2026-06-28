@@ -85,6 +85,13 @@ type ProjectPathUpdateInput struct {
 	Slug string `json:"slug"`
 }
 
+type ProjectSettingsUpdateInput struct {
+	Name             string `json:"name"`
+	Slug             string `json:"slug"`
+	Interactive      bool   `json:"interactive"`
+	AnalyticsEnabled bool   `json:"analyticsEnabled"`
+}
+
 type CollectionCreateInput struct {
 	Name        string        `json:"name"`
 	Permissions PermissionSet `json:"permissions"`
@@ -284,6 +291,35 @@ type ProjectDomainReviewInput struct {
 	Status       string `json:"status"`
 	RejectReason string `json:"rejectReason"`
 	AdminNote    string `json:"adminNote"`
+}
+
+type ProjectDomainDeleteRequest struct {
+	ID               string    `json:"id"`
+	DomainID         string    `json:"domainId"`
+	ProjectID        string    `json:"projectId"`
+	ProjectName      string    `json:"projectName,omitempty"`
+	ProjectPublicURL string    `json:"projectPublicUrl,omitempty"`
+	OwnerUserID      string    `json:"ownerUserId"`
+	OwnerEmail       string    `json:"ownerEmail,omitempty"`
+	Username         string    `json:"username,omitempty"`
+	Domain           string    `json:"domain"`
+	Reason           string    `json:"reason"`
+	Status           string    `json:"status"`
+	AdminNote        string    `json:"adminNote"`
+	ReviewedBy       string    `json:"reviewedBy"`
+	ReviewedAt       time.Time `json:"reviewedAt"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
+type ProjectDomainDeleteRequestCreateInput struct {
+	DomainID string `json:"domainId"`
+	Reason   string `json:"reason"`
+}
+
+type ProjectDomainDeleteRequestReviewInput struct {
+	Status    string `json:"status"`
+	AdminNote string `json:"adminNote"`
 }
 
 type UpgradeRequest struct {

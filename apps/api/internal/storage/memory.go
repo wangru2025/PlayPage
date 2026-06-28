@@ -27,48 +27,52 @@ type memorySession struct {
 }
 
 type MemoryStore struct {
-	publicBase       string
-	mu               sync.RWMutex
-	users            map[string]domain.User
-	usersByMail      map[string]string
-	authCodes        map[string]memoryAuthCode
-	sessions         map[string]memorySession
-	projects         map[string]domain.Project
-	projectUser      map[string]string
-	collections      map[string][]domain.Collection
-	records          map[string][]domain.Record
-	releases         map[string][]domain.Release
-	publicKeys       map[string]string
-	usage            map[string]domain.ProjectUsage
-	dailyStats       map[string]domain.ProjectDailyStats
-	upgradeRequests  map[string]domain.UpgradeRequest
-	projectDomains   map[string]domain.ProjectDomain
-	repairRequests   map[string]domain.RepairRequest
-	repairAIJobs     map[string]domain.RepairAIJob
-	repairAIMessages map[string][]domain.RepairAIMessage
-	reservedDomains  map[string]bool
+	publicBase                  string
+	mu                          sync.RWMutex
+	users                       map[string]domain.User
+	usersByMail                 map[string]string
+	authCodes                   map[string]memoryAuthCode
+	sessions                    map[string]memorySession
+	projects                    map[string]domain.Project
+	projectUser                 map[string]string
+	collections                 map[string][]domain.Collection
+	records                     map[string][]domain.Record
+	releases                    map[string][]domain.Release
+	publicKeys                  map[string]string
+	usage                       map[string]domain.ProjectUsage
+	dailyStats                  map[string]domain.ProjectDailyStats
+	upgradeRequests             map[string]domain.UpgradeRequest
+	projectDomains              map[string]domain.ProjectDomain
+	projectDomainDeleteRequests map[string]domain.ProjectDomainDeleteRequest
+	repairRequests              map[string]domain.RepairRequest
+	repairAIJobs                map[string]domain.RepairAIJob
+	repairAIMessages            map[string][]domain.RepairAIMessage
+	templateSubmissions         map[string]domain.TemplateSubmission
+	reservedDomains             map[string]bool
 }
 
 func NewMemoryStore(publicBase string) *MemoryStore {
 	return &MemoryStore{
-		publicBase:       publicBase,
-		users:            map[string]domain.User{},
-		usersByMail:      map[string]string{},
-		authCodes:        map[string]memoryAuthCode{},
-		sessions:         map[string]memorySession{},
-		projects:         map[string]domain.Project{},
-		projectUser:      map[string]string{},
-		collections:      map[string][]domain.Collection{},
-		records:          map[string][]domain.Record{},
-		releases:         map[string][]domain.Release{},
-		publicKeys:       map[string]string{},
-		usage:            map[string]domain.ProjectUsage{},
-		dailyStats:       map[string]domain.ProjectDailyStats{},
-		upgradeRequests:  map[string]domain.UpgradeRequest{},
-		projectDomains:   map[string]domain.ProjectDomain{},
-		repairRequests:   map[string]domain.RepairRequest{},
-		repairAIJobs:     map[string]domain.RepairAIJob{},
-		repairAIMessages: map[string][]domain.RepairAIMessage{},
+		publicBase:                  publicBase,
+		users:                       map[string]domain.User{},
+		usersByMail:                 map[string]string{},
+		authCodes:                   map[string]memoryAuthCode{},
+		sessions:                    map[string]memorySession{},
+		projects:                    map[string]domain.Project{},
+		projectUser:                 map[string]string{},
+		collections:                 map[string][]domain.Collection{},
+		records:                     map[string][]domain.Record{},
+		releases:                    map[string][]domain.Release{},
+		publicKeys:                  map[string]string{},
+		usage:                       map[string]domain.ProjectUsage{},
+		dailyStats:                  map[string]domain.ProjectDailyStats{},
+		upgradeRequests:             map[string]domain.UpgradeRequest{},
+		projectDomains:              map[string]domain.ProjectDomain{},
+		projectDomainDeleteRequests: map[string]domain.ProjectDomainDeleteRequest{},
+		repairRequests:              map[string]domain.RepairRequest{},
+		repairAIJobs:                map[string]domain.RepairAIJob{},
+		repairAIMessages:            map[string][]domain.RepairAIMessage{},
+		templateSubmissions:         map[string]domain.TemplateSubmission{},
 		reservedDomains: map[string]bool{
 			"www": true, "web": true, "game": true, "a11y": true, "save": true, "api": true, "admin": true,
 			"mail": true, "smtp": true, "static": true, "assets": true, "auth": true, "login": true, "pay": true,
@@ -379,6 +383,23 @@ func (s *MemoryStore) UpdateProjectPath(_ context.Context, userID, projectID, sl
 	return project, true, nil
 }
 
+func (s *MemoryStore) UpdateProjectSettings(_ context.Context, userID, projectID string, input domain.ProjectSettingsUpdateInput) (domain.Project, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	project, ok := s.projects[projectID]
+	if !ok || s.projectUser[projectID] != userID {
+		return domain.Project{}, false, nil
+	}
+	project.Name = input.Name
+	project.Slug = input.Slug
+	project.Interactive = input.Interactive
+	project.AnalyticsEnabled = input.AnalyticsEnabled
+	project.PublicURL = buildPublicURL(s.publicBase, project.Username, input.Slug)
+	s.projects[projectID] = project
+	return project, true, nil
+}
+
 func (s *MemoryStore) CreateCollection(_ context.Context, projectID string, input domain.CollectionCreateInput) (domain.Collection, error) {
 	collection := domain.Collection{
 		ID:          fmt.Sprintf("col_%d", time.Now().UnixNano()),
@@ -684,6 +705,25 @@ func (s *MemoryStore) ListAdminProjectDomains(_ context.Context, status string) 
 	return items, nil
 }
 
+func (s *MemoryStore) GetActiveProjectDomainAccessByDomain(_ context.Context, host string) (domain.ProjectDomain, domain.Project, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, item := range s.projectDomains {
+		if item.Domain != host || item.Status != "active" {
+			continue
+		}
+		project, ok := s.projects[item.ProjectID]
+		if !ok {
+			return domain.ProjectDomain{}, domain.Project{}, false, nil
+		}
+		item.ProjectName = project.Name
+		item.ProjectPublicURL = project.PublicURL
+		return item, project, true, nil
+	}
+	return domain.ProjectDomain{}, domain.Project{}, false, nil
+}
+
 func (s *MemoryStore) UpdateProjectDomainReview(_ context.Context, domainID, status, rejectReason, adminNote, reviewedBy string) (domain.ProjectDomain, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -698,6 +738,110 @@ func (s *MemoryStore) UpdateProjectDomainReview(_ context.Context, domainID, sta
 	item.ReviewedAt = time.Now().UTC()
 	item.UpdatedAt = item.ReviewedAt
 	s.projectDomains[domainID] = item
+	if project, ok := s.projects[item.ProjectID]; ok {
+		item.ProjectName = project.Name
+		item.ProjectPublicURL = project.PublicURL
+	}
+	if user, ok := s.users[item.OwnerUserID]; ok {
+		item.OwnerEmail = user.Email
+		item.Username = user.Username
+	}
+	return item, nil
+}
+
+func (s *MemoryStore) CreateProjectDomainDeleteRequest(_ context.Context, input domain.ProjectDomainDeleteRequest) (domain.ProjectDomainDeleteRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, item := range s.projectDomainDeleteRequests {
+		if item.DomainID == input.DomainID && item.Status == "pending" {
+			return domain.ProjectDomainDeleteRequest{}, fmt.Errorf("这个独立网址已经有待处理的删除申请")
+		}
+	}
+	now := time.Now().UTC()
+	input.ID = fmt.Sprintf("domain_delete_%d", now.UnixNano())
+	if input.Status == "" {
+		input.Status = "pending"
+	}
+	input.CreatedAt = now
+	input.UpdatedAt = now
+	s.projectDomainDeleteRequests[input.ID] = input
+	if project, ok := s.projects[input.ProjectID]; ok {
+		input.ProjectName = project.Name
+		input.ProjectPublicURL = project.PublicURL
+	}
+	if user, ok := s.users[input.OwnerUserID]; ok {
+		input.OwnerEmail = user.Email
+		input.Username = user.Username
+	}
+	return input, nil
+}
+
+func (s *MemoryStore) ListProjectDomainDeleteRequests(_ context.Context, projectID string) ([]domain.ProjectDomainDeleteRequest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.ProjectDomainDeleteRequest{}
+	for _, item := range s.projectDomainDeleteRequests {
+		if item.ProjectID != projectID {
+			continue
+		}
+		if project, ok := s.projects[item.ProjectID]; ok {
+			item.ProjectName = project.Name
+			item.ProjectPublicURL = project.PublicURL
+		}
+		if user, ok := s.users[item.OwnerUserID]; ok {
+			item.OwnerEmail = user.Email
+			item.Username = user.Username
+		}
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) ListAdminProjectDomainDeleteRequests(_ context.Context, status string) ([]domain.ProjectDomainDeleteRequest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.ProjectDomainDeleteRequest{}
+	for _, item := range s.projectDomainDeleteRequests {
+		if status != "" && item.Status != status {
+			continue
+		}
+		if project, ok := s.projects[item.ProjectID]; ok {
+			item.ProjectName = project.Name
+			item.ProjectPublicURL = project.PublicURL
+		}
+		if user, ok := s.users[item.OwnerUserID]; ok {
+			item.OwnerEmail = user.Email
+			item.Username = user.Username
+		}
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) UpdateProjectDomainDeleteRequest(_ context.Context, requestID, status, adminNote, reviewedBy string) (domain.ProjectDomainDeleteRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.projectDomainDeleteRequests[requestID]
+	if !ok {
+		return domain.ProjectDomainDeleteRequest{}, fmt.Errorf("找不到这个独立网址删除申请")
+	}
+	now := time.Now().UTC()
+	item.Status = status
+	item.AdminNote = adminNote
+	item.ReviewedBy = reviewedBy
+	item.ReviewedAt = now
+	item.UpdatedAt = now
+	s.projectDomainDeleteRequests[requestID] = item
+	if status == "completed" && item.DomainID != "" {
+		if domainItem, ok := s.projectDomains[item.DomainID]; ok {
+			domainItem.Status = "disabled"
+			domainItem.AdminNote = adminNote
+			domainItem.UpdatedAt = now
+			s.projectDomains[item.DomainID] = domainItem
+		}
+	}
 	if project, ok := s.projects[item.ProjectID]; ok {
 		item.ProjectName = project.Name
 		item.ProjectPublicURL = project.PublicURL
@@ -934,6 +1078,126 @@ func (s *MemoryStore) IsReservedSubdomain(_ context.Context, subdomain string) (
 	return s.reservedDomains[subdomain], nil
 }
 
+func (s *MemoryStore) CreateTemplateSubmission(_ context.Context, input domain.TemplateSubmission) (domain.TemplateSubmission, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, item := range s.templateSubmissions {
+		if item.Slug == input.Slug {
+			return domain.TemplateSubmission{}, fmt.Errorf("这个模板链接名已经被使用")
+		}
+	}
+	now := time.Now().UTC()
+	input.ID = fmt.Sprintf("tpl_%d", now.UnixNano())
+	input.Status = "pending"
+	input.CreatedAt = now
+	input.UpdatedAt = now
+	if user, ok := s.users[input.AuthorUserID]; ok {
+		input.AuthorEmail = user.Email
+		input.AuthorName = user.Username
+		if input.AuthorName == "" {
+			input.AuthorName = user.Email
+		}
+	}
+	s.templateSubmissions[input.ID] = input
+	return input, nil
+}
+
+func (s *MemoryStore) ListPublishedTemplateSubmissions(_ context.Context) ([]domain.TemplateSubmission, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.TemplateSubmission{}
+	for _, item := range s.templateSubmissions {
+		if item.Status == "published" {
+			items = append(items, s.decorateTemplateSubmissionLocked(item))
+		}
+	}
+	sortTemplateSubmissions(items)
+	return items, nil
+}
+
+func (s *MemoryStore) ListMyTemplateSubmissions(_ context.Context, userID string) ([]domain.TemplateSubmission, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.TemplateSubmission{}
+	for _, item := range s.templateSubmissions {
+		if item.AuthorUserID == userID {
+			items = append(items, s.decorateTemplateSubmissionLocked(item))
+		}
+	}
+	sortTemplateSubmissions(items)
+	return items, nil
+}
+
+func (s *MemoryStore) ListAdminTemplateSubmissions(_ context.Context, status string) ([]domain.TemplateSubmission, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.TemplateSubmission{}
+	for _, item := range s.templateSubmissions {
+		if status != "" && item.Status != status {
+			continue
+		}
+		items = append(items, s.decorateTemplateSubmissionLocked(item))
+	}
+	sortTemplateSubmissions(items)
+	return items, nil
+}
+
+func (s *MemoryStore) GetTemplateSubmission(_ context.Context, submissionID string) (domain.TemplateSubmission, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.templateSubmissions[submissionID]
+	if !ok {
+		return domain.TemplateSubmission{}, false, nil
+	}
+	return s.decorateTemplateSubmissionLocked(item), true, nil
+}
+
+func (s *MemoryStore) GetPublishedTemplateSubmissionByIDOrSlug(_ context.Context, idOrSlug string) (domain.TemplateSubmission, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	idOrSlug = strings.TrimPrefix(idOrSlug, "submission:")
+	for _, item := range s.templateSubmissions {
+		if item.Status == "published" && (item.ID == idOrSlug || item.Slug == idOrSlug) {
+			return s.decorateTemplateSubmissionLocked(item), true, nil
+		}
+	}
+	return domain.TemplateSubmission{}, false, nil
+}
+
+func (s *MemoryStore) UpdateTemplateSubmissionReview(_ context.Context, submissionID, status, adminNote, reviewedBy string) (domain.TemplateSubmission, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.templateSubmissions[submissionID]
+	if !ok {
+		return domain.TemplateSubmission{}, fmt.Errorf("找不到这个模板投稿")
+	}
+	now := time.Now().UTC()
+	item.Status = status
+	item.AdminNote = adminNote
+	item.ReviewedBy = reviewedBy
+	item.ReviewedAt = now
+	item.UpdatedAt = now
+	s.templateSubmissions[submissionID] = item
+	return s.decorateTemplateSubmissionLocked(item), nil
+}
+
+func (s *MemoryStore) decorateTemplateSubmissionLocked(item domain.TemplateSubmission) domain.TemplateSubmission {
+	if user, ok := s.users[item.AuthorUserID]; ok {
+		item.AuthorEmail = user.Email
+		item.AuthorName = user.Username
+		if item.AuthorName == "" {
+			item.AuthorName = user.Email
+		}
+	}
+	return item
+}
+
+func sortTemplateSubmissions(items []domain.TemplateSubmission) {
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].CreatedAt.After(items[j].CreatedAt)
+	})
+}
+
 func (s *MemoryStore) CreateUpgradeRequest(_ context.Context, input domain.UpgradeRequest) (domain.UpgradeRequest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -980,6 +1244,12 @@ func (s *MemoryStore) UpdateUpgradeRequest(_ context.Context, requestID, status,
 func (s *MemoryStore) CreateRelease(_ context.Context, release domain.Release) (domain.Release, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if release.ID == "" {
+		release.ID = fmt.Sprintf("rel_%d", time.Now().UnixNano())
+	}
+	if release.CreatedAt.IsZero() {
+		release.CreatedAt = time.Now().UTC()
+	}
 	s.releases[release.ProjectID] = append(s.releases[release.ProjectID], release)
 	project := s.projects[release.ProjectID]
 	project.CurrentRelease = release.ID
@@ -990,10 +1260,11 @@ func (s *MemoryStore) CreateRelease(_ context.Context, release domain.Release) (
 func (s *MemoryStore) ListReleases(_ context.Context, projectID string) ([]domain.Release, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	items := s.releases[projectID]
+	items := append([]domain.Release{}, s.releases[projectID]...)
 	if items == nil {
 		return []domain.Release{}, nil
 	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
 	return items, nil
 }
 

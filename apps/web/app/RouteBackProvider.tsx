@@ -21,6 +21,7 @@ const routeLabels: Array<[RegExp, string]> = [
   [/^\/projects\/[^/]+\/repair\/[^/]+\/roundtable$/, "圆桌聊天记录"],
   [/^\/projects\/[^/]+\/domains$/, "申请独立网址"],
   [/^\/projects\/[^/]+\/interactive$/, "互动功能"],
+  [/^\/projects\/[^/]+\/settings$/, "作品设置"],
   [/^\/projects\/[^/]+\/stats$/, "统计数据"],
   [/^\/me$/, "个人中心"],
   [/^\/me\/upgrade$/, "升级套餐"],

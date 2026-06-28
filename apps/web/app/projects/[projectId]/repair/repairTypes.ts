@@ -62,6 +62,7 @@ export function requestStatusLabel(status: string): string {
     case "processing": return "管理员处理中";
     case "need_info": return "管理员需要你补充信息";
     case "fixed": return "管理员已修复";
+    case "ai_fixed": return "AI 已修复";
     case "rejected": return "管理员无法处理";
     case "closed": return "已关闭";
     default: return status || "未知状态";

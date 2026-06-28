@@ -15,6 +15,15 @@ type ProjectDomain = {
   adminNote: string;
   createdAt: string;
 };
+type ProjectDomainDeleteRequest = {
+  id: string;
+  domainId: string;
+  domain: string;
+  reason: string;
+  status: string;
+  adminNote: string;
+  createdAt: string;
+};
 type StatusTone = "info" | "success" | "error";
 
 type Props = { projectId: string };
@@ -22,12 +31,20 @@ type Props = { projectId: string };
 function domainStatusLabel(status: string): string {
   if (status === "active") return "已通过";
   if (status === "rejected") return "已驳回";
+  if (status === "disabled") return "已停用";
   return "审核中";
+}
+
+function deleteStatusLabel(status: string): string {
+  if (status === "completed") return "已删除配置";
+  if (status === "rejected") return "已驳回";
+  return "待管理员处理";
 }
 
 export function ProjectDomainsPage({ projectId }: Props) {
   const [project, setProject] = useState<Project | null>(null);
   const [items, setItems] = useState<ProjectDomain[]>([]);
+  const [deleteRequests, setDeleteRequests] = useState<ProjectDomainDeleteRequest[]>([]);
   const [subdomain, setSubdomain] = useState("");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -45,13 +62,16 @@ export function ProjectDomainsPage({ projectId }: Props) {
         getJSON<ProjectResponse>(`/api/v1/projects/${projectId}`),
         getJSON<{ items: ProjectDomain[] }>(`/api/v1/projects/${projectId}/domains`)
       ]);
+      const deleteData = await getJSON<{ items: ProjectDomainDeleteRequest[] }>(`/api/v1/projects/${projectId}/domain-delete-requests`);
       setProject(projectData.project);
       setItems(domainData.items);
+      setDeleteRequests(deleteData.items);
       setStatusText("独立网址申请已读取。");
       setStatusTone("success");
     } catch (error) {
       setProject(null);
       setItems([]);
+      setDeleteRequests([]);
       setStatusText(error instanceof Error ? error.message : "读取独立网址申请失败。");
       setStatusTone("error");
     } finally {
@@ -72,6 +92,29 @@ export function ProjectDomainsPage({ projectId }: Props) {
       setStatusTone("success");
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : "提交独立网址申请失败。");
+      setStatusTone("error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function requestDeleteDomain(item: ProjectDomain) {
+    if (working) return;
+    const reason = window.prompt(`确认申请删除 ${item.domain} 吗？管理员删除服务器配置前，这个网址会暂时显示作品已删除提示。可填写删除原因：`, "不再需要这个独立网址");
+    if (reason === null) return;
+    try {
+      setWorking(true);
+      setStatusText("正在提交独立网址删除申请。");
+      setStatusTone("info");
+      await postJSON<ProjectDomainDeleteRequest>(`/api/v1/projects/${projectId}/domain-delete-requests`, {
+        domainId: item.id,
+        reason: reason.trim()
+      });
+      await loadData();
+      setStatusText("独立网址删除申请已提交，等待管理员处理。");
+      setStatusTone("success");
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : "提交独立网址删除申请失败。");
       setStatusTone("error");
     } finally {
       setWorking(false);
@@ -104,9 +147,27 @@ export function ProjectDomainsPage({ projectId }: Props) {
           <h3 style={{ margin: 0 }}>已有申请</h3>
           {items.length === 0 ? <p style={{ margin: 0, color: "var(--muted)" }}>还没有独立网址申请。</p> : null}
           {items.map((item) => (
+            <div key={item.id} className="soft-badge" style={{ justifySelf: "start", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <span>
+                {domainStatusLabel(item.status)}：{item.domain}
+                {item.rejectReason ? `，原因：${item.rejectReason}` : ""}
+              </span>
+              {(item.status === "active" || item.status === "pending") && !deleteRequests.some((request) => request.domainId === item.id && request.status === "pending") ? (
+                <button className="button-ghost" type="button" onClick={() => requestDeleteDomain(item)} disabled={working}>
+                  申请删除
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          <h3 style={{ margin: 0 }}>删除申请</h3>
+          {deleteRequests.length === 0 ? <p style={{ margin: 0, color: "var(--muted)" }}>还没有独立网址删除申请。</p> : null}
+          {deleteRequests.map((item) => (
             <div key={item.id} className="soft-badge" style={{ justifySelf: "start" }}>
-              {domainStatusLabel(item.status)}：{item.domain}
-              {item.rejectReason ? `，原因：${item.rejectReason}` : ""}
+              {deleteStatusLabel(item.status)}：{item.domain}
+              {item.adminNote ? `，管理员备注：${item.adminNote}` : ""}
             </div>
           ))}
         </div>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"ai-static-host/api/internal/domain"
@@ -444,6 +445,37 @@ func (s *PostgresStore) UpdateProjectPath(ctx context.Context, userID, projectID
 		where id::text = $1 and owner_user_id::text = $2
 		returning id::text, username, slug, name, interactive, analytics_enabled, visibility, coalesce(current_release_id::text, ''), created_at
 	`, projectID, userID, slug).Scan(
+		&project.ID,
+		&project.Username,
+		&project.Slug,
+		&project.Name,
+		&project.Interactive,
+		&project.AnalyticsEnabled,
+		&project.Visibility,
+		&project.CurrentRelease,
+		&project.CreatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.Project{}, false, nil
+		}
+		return domain.Project{}, false, err
+	}
+	project.PublicURL = buildPublicURL(s.publicBase, project.Username, project.Slug)
+	return project, true, nil
+}
+
+func (s *PostgresStore) UpdateProjectSettings(ctx context.Context, userID, projectID string, input domain.ProjectSettingsUpdateInput) (domain.Project, bool, error) {
+	var project domain.Project
+	err := s.pool.QueryRow(ctx, `
+		update projects
+		set name = $3,
+			slug = $4,
+			interactive = $5,
+			analytics_enabled = $6
+		where id::text = $1 and owner_user_id::text = $2
+		returning id::text, username, slug, name, interactive, analytics_enabled, visibility, coalesce(current_release_id::text, ''), created_at
+	`, projectID, userID, input.Name, input.Slug, input.Interactive, input.AnalyticsEnabled).Scan(
 		&project.ID,
 		&project.Username,
 		&project.Slug,
@@ -1007,6 +1039,38 @@ func (s *PostgresStore) ListAdminProjectDomains(ctx context.Context, status stri
 	return items, rows.Err()
 }
 
+func (s *PostgresStore) GetActiveProjectDomainAccessByDomain(ctx context.Context, host string) (domain.ProjectDomain, domain.Project, bool, error) {
+	var item domain.ProjectDomain
+	var project domain.Project
+	err := s.pool.QueryRow(ctx, `
+		select d.id::text, d.project_id::text, d.owner_user_id::text, d.subdomain, d.domain, d.status,
+			d.reject_reason, d.admin_note, coalesce(d.reviewed_by_user_id::text, ''),
+			coalesce(d.reviewed_at, '0001-01-01T00:00:00Z'::timestamptz), d.created_at, d.updated_at,
+			p.id::text, p.username, p.slug, p.name, p.interactive, p.analytics_enabled, p.visibility,
+			coalesce(p.current_release_id::text, ''), p.created_at
+		from project_domains d
+		join projects p on p.id = d.project_id
+		where d.domain = $1 and d.status = 'active'
+		order by d.updated_at desc
+		limit 1
+	`, host).Scan(
+		&item.ID, &item.ProjectID, &item.OwnerUserID, &item.Subdomain, &item.Domain, &item.Status,
+		&item.RejectReason, &item.AdminNote, &item.ReviewedBy, &item.ReviewedAt, &item.CreatedAt, &item.UpdatedAt,
+		&project.ID, &project.Username, &project.Slug, &project.Name, &project.Interactive, &project.AnalyticsEnabled,
+		&project.Visibility, &project.CurrentRelease, &project.CreatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.ProjectDomain{}, domain.Project{}, false, nil
+		}
+		return domain.ProjectDomain{}, domain.Project{}, false, err
+	}
+	project.PublicURL = buildPublicURL(s.publicBase, project.Username, project.Slug)
+	item.ProjectName = project.Name
+	item.ProjectPublicURL = project.PublicURL
+	return item, project, true, nil
+}
+
 func (s *PostgresStore) UpdateProjectDomainReview(ctx context.Context, domainID, status, rejectReason, adminNote, reviewedBy string) (domain.ProjectDomain, error) {
 	var item domain.ProjectDomain
 	var projectUsername string
@@ -1031,6 +1095,125 @@ func (s *PostgresStore) UpdateProjectDomainReview(ctx context.Context, domainID,
 	}
 	item.ProjectPublicURL = buildPublicURL(s.publicBase, projectUsername, projectSlug)
 	return item, nil
+}
+
+func (s *PostgresStore) CreateProjectDomainDeleteRequest(ctx context.Context, input domain.ProjectDomainDeleteRequest) (domain.ProjectDomainDeleteRequest, error) {
+	err := s.pool.QueryRow(ctx, `
+		insert into project_domain_delete_requests (domain_id, project_id, owner_user_id, domain, reason, status, admin_note)
+		values (nullif($1, '')::uuid, nullif($2, '')::uuid, nullif($3, '')::uuid, $4, $5, $6, $7)
+		returning id::text, coalesce(domain_id::text, ''), coalesce(project_id::text, ''), coalesce(owner_user_id::text, ''),
+			domain, reason, status, admin_note, coalesce(reviewed_by_user_id::text, ''),
+			coalesce(reviewed_at, '0001-01-01T00:00:00Z'::timestamptz), created_at, updated_at
+	`, input.DomainID, input.ProjectID, input.OwnerUserID, input.Domain, input.Reason, input.Status, input.AdminNote).Scan(
+		&input.ID, &input.DomainID, &input.ProjectID, &input.OwnerUserID, &input.Domain, &input.Reason, &input.Status,
+		&input.AdminNote, &input.ReviewedBy, &input.ReviewedAt, &input.CreatedAt, &input.UpdatedAt,
+	)
+	if err != nil {
+		return domain.ProjectDomainDeleteRequest{}, err
+	}
+	return input, nil
+}
+
+func (s *PostgresStore) ListProjectDomainDeleteRequests(ctx context.Context, projectID string) ([]domain.ProjectDomainDeleteRequest, error) {
+	rows, err := s.pool.Query(ctx, `
+		select r.id::text, coalesce(r.domain_id::text, ''), coalesce(r.project_id::text, ''), coalesce(p.name, ''),
+			coalesce(p.username, ''), coalesce(p.slug, ''), coalesce(r.owner_user_id::text, ''), coalesce(u.email, ''), coalesce(u.username, ''),
+			r.domain, r.reason, r.status, r.admin_note, coalesce(r.reviewed_by_user_id::text, ''),
+			coalesce(r.reviewed_at, '0001-01-01T00:00:00Z'::timestamptz), r.created_at, r.updated_at
+		from project_domain_delete_requests r
+		left join projects p on p.id = r.project_id
+		left join users u on u.id = r.owner_user_id
+		where r.project_id::text = $1
+		order by r.created_at desc
+	`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanProjectDomainDeleteRequests(rows, s.publicBase)
+}
+
+func (s *PostgresStore) ListAdminProjectDomainDeleteRequests(ctx context.Context, status string) ([]domain.ProjectDomainDeleteRequest, error) {
+	query := `
+		select r.id::text, coalesce(r.domain_id::text, ''), coalesce(r.project_id::text, ''), coalesce(p.name, ''),
+			coalesce(p.username, ''), coalesce(p.slug, ''), coalesce(r.owner_user_id::text, ''), coalesce(u.email, ''), coalesce(u.username, ''),
+			r.domain, r.reason, r.status, r.admin_note, coalesce(r.reviewed_by_user_id::text, ''),
+			coalesce(r.reviewed_at, '0001-01-01T00:00:00Z'::timestamptz), r.created_at, r.updated_at
+		from project_domain_delete_requests r
+		left join projects p on p.id = r.project_id
+		left join users u on u.id = r.owner_user_id`
+	args := []any{}
+	if status != "" {
+		query += " where r.status = $1"
+		args = append(args, status)
+	}
+	query += " order by r.created_at desc"
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanProjectDomainDeleteRequests(rows, s.publicBase)
+}
+
+func (s *PostgresStore) UpdateProjectDomainDeleteRequest(ctx context.Context, requestID, status, adminNote, reviewedBy string) (domain.ProjectDomainDeleteRequest, error) {
+	var item domain.ProjectDomainDeleteRequest
+	var projectName, projectUsername, projectSlug string
+	err := s.pool.QueryRow(ctx, `
+		with updated as (
+			update project_domain_delete_requests
+			set status = $2, admin_note = $3, reviewed_by_user_id = nullif($4, '')::uuid, reviewed_at = now(), updated_at = now()
+			where id::text = $1
+			returning id, domain_id, project_id, owner_user_id, domain, reason, status, admin_note, reviewed_by_user_id, reviewed_at, created_at, updated_at
+		), disabled_domain as (
+			update project_domains
+			set status = 'disabled', admin_note = case when $2 = 'completed' then $3 else admin_note end, updated_at = now()
+			where id in (select domain_id from updated where $2 = 'completed' and domain_id is not null)
+		)
+		select u.id::text, coalesce(u.domain_id::text, ''), coalesce(u.project_id::text, ''), coalesce(p.name, ''),
+			coalesce(p.username, ''), coalesce(p.slug, ''), coalesce(u.owner_user_id::text, ''), coalesce(owner.email, ''), coalesce(owner.username, ''),
+			u.domain, u.reason, u.status, u.admin_note, coalesce(u.reviewed_by_user_id::text, ''),
+			u.reviewed_at, u.created_at, u.updated_at
+		from updated u
+		left join projects p on p.id = u.project_id
+		left join users owner on owner.id = u.owner_user_id
+	`, requestID, status, adminNote, reviewedBy).Scan(
+		&item.ID, &item.DomainID, &item.ProjectID, &projectName, &projectUsername, &projectSlug, &item.OwnerUserID,
+		&item.OwnerEmail, &item.Username, &item.Domain, &item.Reason, &item.Status, &item.AdminNote, &item.ReviewedBy,
+		&item.ReviewedAt, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return domain.ProjectDomainDeleteRequest{}, err
+	}
+	item.ProjectName = projectName
+	if projectUsername != "" && projectSlug != "" {
+		item.ProjectPublicURL = buildPublicURL(s.publicBase, projectUsername, projectSlug)
+	}
+	return item, nil
+}
+
+type projectDomainDeleteRows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+}
+
+func scanProjectDomainDeleteRequests(rows projectDomainDeleteRows, publicBase string) ([]domain.ProjectDomainDeleteRequest, error) {
+	items := []domain.ProjectDomainDeleteRequest{}
+	for rows.Next() {
+		var item domain.ProjectDomainDeleteRequest
+		var projectUsername, projectSlug string
+		if err := rows.Scan(&item.ID, &item.DomainID, &item.ProjectID, &item.ProjectName, &projectUsername, &projectSlug,
+			&item.OwnerUserID, &item.OwnerEmail, &item.Username, &item.Domain, &item.Reason, &item.Status, &item.AdminNote,
+			&item.ReviewedBy, &item.ReviewedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if projectUsername != "" && projectSlug != "" {
+			item.ProjectPublicURL = buildPublicURL(publicBase, projectUsername, projectSlug)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (s *PostgresStore) CreateRepairRequest(ctx context.Context, input domain.RepairRequest) (domain.RepairRequest, error) {
@@ -1300,6 +1483,234 @@ func (s *PostgresStore) IsReservedSubdomain(ctx context.Context, subdomain strin
 	return exists, err
 }
 
+func (s *PostgresStore) CreateTemplateSubmission(ctx context.Context, input domain.TemplateSubmission) (domain.TemplateSubmission, error) {
+	tagsJSON, configJSON, collectionsJSON, err := marshalTemplateSubmissionJSON(input)
+	if err != nil {
+		return domain.TemplateSubmission{}, err
+	}
+	err = s.pool.QueryRow(ctx, `
+		insert into template_submissions (
+			author_user_id, slug, name, category, category_label, summary, description,
+			tags, interactive_required, analytics_recommended, config_fields, collections,
+			html_source, source_type, status
+		)
+		values ($1::uuid, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::jsonb, $12::jsonb, $13, $14, 'pending')
+		returning id::text, status, created_at, updated_at
+	`, input.AuthorUserID, input.Slug, input.Name, input.Category, input.CategoryLabel, input.Summary, input.Description, tagsJSON, input.InteractiveRequired, input.AnalyticsRecommended, configJSON, collectionsJSON, input.HTMLSource, input.SourceType).Scan(&input.ID, &input.Status, &input.CreatedAt, &input.UpdatedAt)
+	if err != nil {
+		return domain.TemplateSubmission{}, err
+	}
+	return s.decorateTemplateSubmission(ctx, input)
+}
+
+func (s *PostgresStore) ListPublishedTemplateSubmissions(ctx context.Context) ([]domain.TemplateSubmission, error) {
+	rows, err := s.pool.Query(ctx, templateSubmissionSelectSQL()+`
+		where t.status = 'published'
+		order by t.created_at desc
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanTemplateSubmissions(rows, false)
+}
+
+func (s *PostgresStore) ListMyTemplateSubmissions(ctx context.Context, userID string) ([]domain.TemplateSubmission, error) {
+	rows, err := s.pool.Query(ctx, templateSubmissionSelectSQL()+`
+		where t.author_user_id::text = $1
+		order by t.created_at desc
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanTemplateSubmissions(rows, true)
+}
+
+func (s *PostgresStore) ListAdminTemplateSubmissions(ctx context.Context, status string) ([]domain.TemplateSubmission, error) {
+	query := templateSubmissionSelectSQL()
+	args := []any{}
+	if status != "" {
+		query += ` where t.status = $1`
+		args = append(args, status)
+	}
+	query += ` order by t.created_at desc`
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanTemplateSubmissions(rows, true)
+}
+
+func (s *PostgresStore) GetTemplateSubmission(ctx context.Context, submissionID string) (domain.TemplateSubmission, bool, error) {
+	rows, err := s.pool.Query(ctx, templateSubmissionSelectSQL()+`
+		where t.id::text = $1
+	`, submissionID)
+	if err != nil {
+		return domain.TemplateSubmission{}, false, err
+	}
+	defer rows.Close()
+	items, err := scanTemplateSubmissions(rows, true)
+	if err != nil {
+		return domain.TemplateSubmission{}, false, err
+	}
+	if len(items) == 0 {
+		return domain.TemplateSubmission{}, false, nil
+	}
+	return items[0], true, nil
+}
+
+func (s *PostgresStore) GetPublishedTemplateSubmissionByIDOrSlug(ctx context.Context, idOrSlug string) (domain.TemplateSubmission, bool, error) {
+	idOrSlug = strings.TrimPrefix(idOrSlug, "submission:")
+	rows, err := s.pool.Query(ctx, templateSubmissionSelectSQL()+`
+		where t.status = 'published' and (t.id::text = $1 or t.slug = $1)
+	`, idOrSlug)
+	if err != nil {
+		return domain.TemplateSubmission{}, false, err
+	}
+	defer rows.Close()
+	items, err := scanTemplateSubmissions(rows, true)
+	if err != nil {
+		return domain.TemplateSubmission{}, false, err
+	}
+	if len(items) == 0 {
+		return domain.TemplateSubmission{}, false, nil
+	}
+	return items[0], true, nil
+}
+
+func (s *PostgresStore) UpdateTemplateSubmissionReview(ctx context.Context, submissionID, status, adminNote, reviewedBy string) (domain.TemplateSubmission, error) {
+	var item domain.TemplateSubmission
+	var tagsJSON, configJSON, collectionsJSON []byte
+	err := s.pool.QueryRow(ctx, `
+		update template_submissions
+		set status = $2, admin_note = $3, reviewed_by_user_id = nullif($4, '')::uuid, reviewed_at = now(), updated_at = now()
+		where id::text = $1
+		returning id::text, author_user_id::text, slug, name, category, category_label, summary, description,
+			tags, interactive_required, analytics_recommended, config_fields, collections,
+			html_source, source_type, status, admin_note, coalesce(reviewed_by_user_id::text, ''),
+			coalesce(reviewed_at, '0001-01-01T00:00:00Z'::timestamptz), created_at, updated_at
+	`, submissionID, status, adminNote, reviewedBy).Scan(
+		&item.ID, &item.AuthorUserID, &item.Slug, &item.Name, &item.Category, &item.CategoryLabel, &item.Summary, &item.Description,
+		&tagsJSON, &item.InteractiveRequired, &item.AnalyticsRecommended, &configJSON, &collectionsJSON,
+		&item.HTMLSource, &item.SourceType, &item.Status, &item.AdminNote, &item.ReviewedBy, &item.ReviewedAt, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return domain.TemplateSubmission{}, err
+	}
+	if err := unmarshalTemplateSubmissionJSON(&item, tagsJSON, configJSON, collectionsJSON); err != nil {
+		return domain.TemplateSubmission{}, err
+	}
+	return s.decorateTemplateSubmission(ctx, item)
+}
+
+func templateSubmissionSelectSQL() string {
+	return `
+		select
+			t.id::text, t.author_user_id::text, u.email, coalesce(u.username, ''),
+			t.slug, t.name, t.category, t.category_label, t.summary, t.description,
+			t.tags, t.interactive_required, t.analytics_recommended, t.config_fields, t.collections,
+			t.html_source, t.source_type, t.status, t.admin_note, coalesce(t.reviewed_by_user_id::text, ''),
+			coalesce(t.reviewed_at, '0001-01-01T00:00:00Z'::timestamptz), t.created_at, t.updated_at
+		from template_submissions t
+		join users u on u.id = t.author_user_id
+	`
+}
+
+type templateSubmissionRows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+}
+
+func scanTemplateSubmissions(rows templateSubmissionRows, includeHTML bool) ([]domain.TemplateSubmission, error) {
+	items := []domain.TemplateSubmission{}
+	for rows.Next() {
+		var item domain.TemplateSubmission
+		var tagsJSON, configJSON, collectionsJSON []byte
+		if err := rows.Scan(
+			&item.ID, &item.AuthorUserID, &item.AuthorEmail, &item.AuthorName,
+			&item.Slug, &item.Name, &item.Category, &item.CategoryLabel, &item.Summary, &item.Description,
+			&tagsJSON, &item.InteractiveRequired, &item.AnalyticsRecommended, &configJSON, &collectionsJSON,
+			&item.HTMLSource, &item.SourceType, &item.Status, &item.AdminNote, &item.ReviewedBy,
+			&item.ReviewedAt, &item.CreatedAt, &item.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if item.AuthorName == "" {
+			item.AuthorName = item.AuthorEmail
+		}
+		if err := unmarshalTemplateSubmissionJSON(&item, tagsJSON, configJSON, collectionsJSON); err != nil {
+			return nil, err
+		}
+		if !includeHTML {
+			item.HTMLSource = ""
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func marshalTemplateSubmissionJSON(input domain.TemplateSubmission) ([]byte, []byte, []byte, error) {
+	tagsJSON, err := json.Marshal(input.Tags)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	configJSON, err := json.Marshal(input.ConfigFields)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	collectionsJSON, err := json.Marshal(input.Collections)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return tagsJSON, configJSON, collectionsJSON, nil
+}
+
+func unmarshalTemplateSubmissionJSON(item *domain.TemplateSubmission, tagsJSON, configJSON, collectionsJSON []byte) error {
+	if len(tagsJSON) > 0 {
+		if err := json.Unmarshal(tagsJSON, &item.Tags); err != nil {
+			return err
+		}
+	}
+	if len(configJSON) > 0 {
+		if err := json.Unmarshal(configJSON, &item.ConfigFields); err != nil {
+			return err
+		}
+	}
+	if len(collectionsJSON) > 0 {
+		if err := json.Unmarshal(collectionsJSON, &item.Collections); err != nil {
+			return err
+		}
+	}
+	if item.Tags == nil {
+		item.Tags = []string{}
+	}
+	if item.ConfigFields == nil {
+		item.ConfigFields = []domain.TemplateConfigField{}
+	}
+	if item.Collections == nil {
+		item.Collections = []domain.TemplateCollectionDefinition{}
+	}
+	return nil
+}
+
+func (s *PostgresStore) decorateTemplateSubmission(ctx context.Context, item domain.TemplateSubmission) (domain.TemplateSubmission, error) {
+	user, ok, err := s.GetUserByID(ctx, item.AuthorUserID)
+	if err != nil {
+		return domain.TemplateSubmission{}, err
+	}
+	if ok {
+		item.AuthorEmail = user.Email
+		item.AuthorName = user.Username
+		if item.AuthorName == "" {
+			item.AuthorName = user.Email
+		}
+	}
+	return item, nil
+}
+
 func (s *PostgresStore) CreateUpgradeRequest(ctx context.Context, input domain.UpgradeRequest) (domain.UpgradeRequest, error) {
 	err := s.pool.QueryRow(ctx, `
 		insert into upgrade_requests (user_id, current_plan, target_plan, payment_method, payer_note, system_note, status, admin_note)
@@ -1411,16 +1822,17 @@ func (s *PostgresStore) UpdateUpgradeRequest(ctx context.Context, requestID, sta
 
 func (s *PostgresStore) CreateRelease(ctx context.Context, release domain.Release) (domain.Release, error) {
 	err := s.pool.QueryRow(ctx, `
-		insert into project_releases (project_id, status, source_archive_path, public_dir_path, entry_file)
-		values ($1::uuid, $2, $3, $4, $5)
-		returning id::text, project_id::text, status, source_archive_path, public_dir_path, entry_file, created_at
-	`, release.ProjectID, release.Status, release.ArchivePath, release.PublicPath, release.EntryFile).Scan(
+		insert into project_releases (project_id, status, source_archive_path, public_dir_path, entry_file, change_note)
+		values ($1::uuid, $2, $3, $4, $5, $6)
+		returning id::text, project_id::text, status, source_archive_path, public_dir_path, entry_file, change_note, created_at
+	`, release.ProjectID, release.Status, release.ArchivePath, release.PublicPath, release.EntryFile, release.ChangeNote).Scan(
 		&release.ID,
 		&release.ProjectID,
 		&release.Status,
 		&release.ArchivePath,
 		&release.PublicPath,
 		&release.EntryFile,
+		&release.ChangeNote,
 		&release.CreatedAt,
 	)
 	if err != nil {
@@ -1434,7 +1846,7 @@ func (s *PostgresStore) CreateRelease(ctx context.Context, release domain.Releas
 
 func (s *PostgresStore) ListReleases(ctx context.Context, projectID string) ([]domain.Release, error) {
 	rows, err := s.pool.Query(ctx, `
-		select id::text, project_id::text, status, source_archive_path, public_dir_path, entry_file, created_at
+		select id::text, project_id::text, status, source_archive_path, public_dir_path, entry_file, coalesce(change_note, ''), created_at
 		from project_releases
 		where project_id::text = $1
 		order by created_at desc
@@ -1447,7 +1859,7 @@ func (s *PostgresStore) ListReleases(ctx context.Context, projectID string) ([]d
 	items := []domain.Release{}
 	for rows.Next() {
 		var release domain.Release
-		if err := rows.Scan(&release.ID, &release.ProjectID, &release.Status, &release.ArchivePath, &release.PublicPath, &release.EntryFile, &release.CreatedAt); err != nil {
+		if err := rows.Scan(&release.ID, &release.ProjectID, &release.Status, &release.ArchivePath, &release.PublicPath, &release.EntryFile, &release.ChangeNote, &release.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, release)

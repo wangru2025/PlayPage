@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { deleteJSON, getJSON, patchJSON, postJSON, reportClientError } from "@/lib/api";
 
 type Project = {
@@ -57,6 +58,7 @@ const text = {
   disabled: "这个作品还没有启用互动功能。",
   empty: "这个作品还没有建立任何作品数据表。",
   docButton: "复制 API 文档",
+  exportButton: "导出数据表",
   docDone: "API 文档已经复制。",
   docFail: "复制失败，请从下面的文本框手动复制。",
   sectionData: "作品数据",
@@ -254,9 +256,14 @@ export function InteractiveWorkspace({ projectId }: { projectId: string }) {
                 <p style={{ margin: 0, color: "var(--muted)" }}>{text.help}</p>
               </div>
               <div>
-                <button className="button-primary" type="button" onClick={copyDoc} disabled={!apiDoc}>
-                  {text.docButton}
-                </button>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <Link className="button-secondary" href={`/projects/${projectId}/interactive/export`}>
+                    {text.exportButton}
+                  </Link>
+                  <button className="button-primary" type="button" onClick={copyDoc} disabled={!apiDoc}>
+                    {text.docButton}
+                  </button>
+                </div>
               </div>
             </div>
             <label className="field" style={{ display: "grid", gap: 8 }}>

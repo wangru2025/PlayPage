@@ -75,6 +75,7 @@ function statusLabel(status: string): string {
     case "processing": return "处理中";
     case "need_info": return "等待用户补充";
     case "fixed": return "已修复";
+    case "ai_fixed": return "AI 已修复";
     case "rejected": return "无法处理";
     case "closed": return "已关闭";
     default: return status;

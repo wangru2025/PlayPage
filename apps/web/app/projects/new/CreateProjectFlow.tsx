@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { buildURL, getCSRFToken, postJSON, reportClientError } from "@/lib/api";
+import { buildURL, getCSRFToken, getJSON, postJSON, reportClientError } from "@/lib/api";
+import type { ProjectTemplate, TemplateConfigField } from "@/app/templates/templateTypes";
 
 type CreateProjectResponse = {
   id: string;
@@ -22,11 +23,16 @@ type ReleaseResponse = {
   archivePath: string;
   publicPath: string;
   entryFile: string;
+  changeNote: string;
   warnings?: string[];
   createdAt: string;
 };
 
-type UploadMode = "zip" | "html" | "text";
+type TemplateDetailResponse = {
+  template: ProjectTemplate;
+};
+
+type UploadMode = "zip" | "html" | "text" | "template";
 type Step = "fill" | "publishing" | "done";
 
 const maxContentBytes = 10 * 1024 * 1024;
@@ -54,9 +60,20 @@ const text = {
   analyticsTitle: "访问量统计说明",
   analyticsSummary: "启用后，PlayPage 会在作品 HTML 中加入一段访问统计代码。它会记录每日访问量和互动 API 请求统计，包括请求次数、成功次数、失败次数、成功率和失败率。它不会读取页面输入内容、密码或互动数据。你下载作品源码时，也会下载包含这段统计代码的版本。",
   uploadType: "上传方式",
+  changeNote: "更新内容（可选）",
+  changeNotePlaceholder: "例如：修复按钮无反应、增加排行榜、调整页面样式",
   zip: "ZIP 压缩包",
   html: "单个 HTML 文件",
   text: "直接粘贴 HTML 代码",
+  template: "使用模板",
+  templateHint: "先去模板市场选择模板，再回到这里填写模板参数并创建作品。",
+  chooseTemplate: "前往模板市场选择模板",
+  changeTemplate: "更换模板",
+  selectedTemplate: "已选择模板：",
+  templateParams: "模板参数",
+  templateMissing: "请先选择模板。",
+  templateLoading: "正在读取模板。",
+  templateLoaded: "模板已读取，请填写参数。",
   zipHint: "上传内容不能超过 10MB。ZIP 只支持白名单静态资源文件。",
   htmlHint: "可以直接上传一个 .html、.ht m 或 .txt 文件，文件内容不能超过 10MB。".replace(" ", ""),
   textHint:
@@ -66,6 +83,7 @@ const text = {
   codePlaceholder:
     "<!doctype html>\n<html lang=\"zh-CN\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>我的作品</title>\n</head>\n<body>\n  <h1>你好</h1>\n</body>\n</html>",
   start: "上传作品",
+  templateStart: "创建模板作品",
   updateStart: "上传新版本",
   creating: "正在创建作品并发布。",
   uploading: "正在上传内容。",
@@ -78,6 +96,8 @@ const text = {
   tooLarge: "上传内容不能超过 10MB。",
   fileMissing: "请先选择上传文件。",
   codeMissing: "请先粘贴 HTML 代码。",
+  templateParamMissing: "请填写模板参数：",
+  templateColorInvalid: "颜色参数必须是 #RRGGBB 格式：",
   requiredName: "请先填写作品名称。",
   requiredSlug: "请先填写作品链接名。",
   uploadedBytes: "已上传：",
@@ -99,6 +119,21 @@ function normalizePathText(value: string): string {
     normalized = normalized.replaceAll("--", "-");
   }
   return normalized;
+}
+
+function normalizeColorValue(value: string, fallback = "#2563eb"): string {
+  const trimmed = value.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(trimmed)) {
+    return `#${trimmed.toLowerCase()}`;
+  }
+  return fallback;
+}
+
+function isHexColor(value: string): boolean {
+  return /^#[0-9a-fA-F]{6}$/.test(value.trim());
 }
 
 function uploadWithProgress<T>(
@@ -167,6 +202,9 @@ function formatBytes(bytes: number): string {
 
 export function CreateProjectFlow() {
   const [routeProjectId, setRouteProjectId] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState<ProjectTemplate | null>(null);
+  const [templateParams, setTemplateParams] = useState<Record<string, string>>({});
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
@@ -175,6 +213,7 @@ export function CreateProjectFlow() {
   const [mode, setMode] = useState<UploadMode>("zip");
   const [file, setFile] = useState<File | null>(null);
   const [htmlText, setHtmlText] = useState("");
+  const [changeNote, setChangeNote] = useState("");
   const [step, setStep] = useState<Step>("fill");
   const [statusText, setStatusText] = useState("");
   const [progressLoaded, setProgressLoaded] = useState(0);
@@ -190,7 +229,54 @@ export function CreateProjectFlow() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setRouteProjectId(params.get("projectId") ?? "");
+    const source = params.get("source") ?? "";
+    const nextTemplateId = params.get("templateId") ?? "";
+    if (source === "template" && nextTemplateId) {
+      setMode("template");
+      setTemplateId(nextTemplateId);
+    }
   }, []);
+
+  useEffect(() => {
+    if (!templateId) {
+      setSelectedTemplate(null);
+      setTemplateParams({});
+      return;
+    }
+    let canceled = false;
+    async function loadTemplate() {
+      try {
+        setStatusText(text.templateLoading);
+        const payload = await getJSON<TemplateDetailResponse>(`/api/v1/templates/${encodeURIComponent(templateId)}`);
+        if (canceled) return;
+        setSelectedTemplate(payload.template);
+        setTemplateParams((current) => {
+          const next = { ...current };
+          for (const field of payload.template.configFields) {
+            if (next[field.name] === undefined) {
+              next[field.name] = field.default ?? "";
+            }
+          }
+          return next;
+        });
+        if (payload.template.interactiveRequired) {
+          setInteractive(true);
+        }
+        if (payload.template.analyticsRecommended) {
+          setAnalyticsEnabled(true);
+        }
+        setStatusText(text.templateLoaded);
+      } catch (error) {
+        if (canceled) return;
+        setSelectedTemplate(null);
+        setStatusText(error instanceof Error ? error.message : "读取模板失败。");
+      }
+    }
+    void loadTemplate();
+    return () => {
+      canceled = true;
+    };
+  }, [templateId]);
 
   useEffect(() => {
     if (slugTouched) {
@@ -202,6 +288,87 @@ export function CreateProjectFlow() {
   const progressPercent = progressTotal > 0 ? Math.min(Math.round((progressLoaded / progressTotal) * 100), 100) : 0;
 
   const isUpdateMode = routeProjectId !== "";
+  const effectiveInteractive = interactive || (mode === "template" && selectedTemplate?.interactiveRequired === true);
+
+  function updateTemplateParam(name: string, value: string) {
+    setTemplateParams((current) => ({ ...current, [name]: value }));
+  }
+
+  function renderTemplateField(field: TemplateConfigField) {
+    const value = templateParams[field.name] ?? field.default ?? "";
+    const id = `template-param-${field.name}`;
+    if (field.type === "text") {
+      return (
+        <label key={field.name} className="field" htmlFor={id}>
+          <span>{field.label}{field.required ? " *" : ""}</span>
+          <textarea
+            id={id}
+            rows={4}
+            value={value}
+            onChange={(event) => updateTemplateParam(field.name, event.target.value)}
+            placeholder={field.placeholder}
+          />
+          {field.help ? <span className="field-note">{field.help}</span> : null}
+        </label>
+      );
+    }
+    if (field.type === "select") {
+      return (
+        <label key={field.name} className="field" htmlFor={id}>
+          <span>{field.label}{field.required ? " *" : ""}</span>
+          <select id={id} value={value} onChange={(event) => updateTemplateParam(field.name, event.target.value)}>
+            {(field.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+          {field.help ? <span className="field-note">{field.help}</span> : null}
+        </label>
+      );
+    }
+    if (field.type === "color") {
+      const colorValue = normalizeColorValue(value, normalizeColorValue(field.default || "#2563eb"));
+      return (
+        <div key={field.name} className="field">
+          <label htmlFor={id}>
+            <span>{field.label}{field.required ? " *" : ""}</span>
+          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "72px minmax(160px, 1fr)", gap: 10, alignItems: "center" }}>
+            <input
+              id={id}
+              type="color"
+              value={colorValue}
+              aria-label={`${field.label}颜色选择器`}
+              onChange={(event) => updateTemplateParam(field.name, event.target.value)}
+              style={{ width: 72, minHeight: 44, padding: 4 }}
+            />
+            <input
+              type="text"
+              value={value}
+              onChange={(event) => updateTemplateParam(field.name, normalizeColorValue(event.target.value, event.target.value))}
+              onBlur={(event) => updateTemplateParam(field.name, normalizeColorValue(event.target.value, colorValue))}
+              placeholder={field.placeholder || "#2563eb"}
+              aria-label={`${field.label}十六进制颜色值`}
+            />
+          </div>
+          <span className="field-note">
+            {field.help || "可以直接点左侧选择颜色，也可以输入 #RRGGBB 格式，例如 #2563eb。"}
+          </span>
+        </div>
+      );
+    }
+    return (
+      <label key={field.name} className="field" htmlFor={id}>
+        <span>{field.label}{field.required ? " *" : ""}</span>
+        <input
+          id={id}
+          type={field.type === "color" ? "color" : "text"}
+          value={value}
+          onChange={(event) => updateTemplateParam(field.name, event.target.value)}
+          placeholder={field.placeholder}
+        />
+        {field.help ? <span className="field-note">{field.help}</span> : null}
+      </label>
+    );
+  }
+
   async function submit() {
     if (working) {
       return;
@@ -230,6 +397,25 @@ export function CreateProjectFlow() {
       setStatusText(text.tooLarge);
       return;
     }
+    if (mode === "template") {
+      if (!selectedTemplate) {
+        setStatusText(text.templateMissing);
+        return;
+      }
+      for (const field of selectedTemplate.configFields) {
+        if (field.required && (templateParams[field.name] ?? "").trim() === "") {
+          setStatusText(`${text.templateParamMissing}${field.label}`);
+          return;
+        }
+        if (field.type === "color") {
+          const colorValue = (templateParams[field.name] ?? field.default ?? "").trim();
+          if (colorValue && !isHexColor(colorValue)) {
+            setStatusText(`${text.templateColorInvalid}${field.label}`);
+            return;
+          }
+        }
+      }
+    }
 
     try {
       setWorking(true);
@@ -241,12 +427,12 @@ export function CreateProjectFlow() {
       setReleaseWarnings([]);
 
       let targetProjectId = routeProjectId;
-      let targetInteractive = interactive;
+      let targetInteractive = effectiveInteractive;
       if (!isUpdateMode) {
         const project = await postJSON<CreateProjectResponse>("/api/v1/projects", {
           name,
           slug: normalizePathText(slug),
-          interactive,
+          interactive: effectiveInteractive,
           analyticsEnabled
         });
         targetProjectId = project.id;
@@ -257,6 +443,7 @@ export function CreateProjectFlow() {
       if (mode === "zip" || mode === "html") {
         const form = new FormData();
         form.append("file", file as File);
+        form.append("changeNote", changeNote);
         const release = await uploadWithProgress<ReleaseResponse>(
           `/api/v1/projects/${targetProjectId}/releases?mode=${mode}`,
           form,
@@ -267,9 +454,19 @@ export function CreateProjectFlow() {
           }
         );
         setReleaseWarnings(release.warnings ?? []);
-      } else {
+      } else if (mode === "text") {
         const release = await postJSON<ReleaseResponse>(`/api/v1/projects/${targetProjectId}/releases?mode=text`, {
-          html: htmlText
+          html: htmlText,
+          changeNote
+        });
+        setProgressLoaded(1);
+        setProgressTotal(1);
+        setReleaseWarnings(release.warnings ?? []);
+      } else {
+        const release = await postJSON<ReleaseResponse>(`/api/v1/projects/${targetProjectId}/releases?mode=template`, {
+          templateId: selectedTemplate?.id ?? templateId,
+          params: templateParams,
+          changeNote
         });
         setProgressLoaded(1);
         setProgressTotal(1);
@@ -425,6 +622,13 @@ export function CreateProjectFlow() {
               {" "}
               {text.text}
             </label>
+            {!isUpdateMode ? (
+              <label>
+                <input type="radio" name="upload-mode" checked={mode === "template"} onChange={() => setMode("template")} />
+                {" "}
+                {text.template}
+              </label>
+            ) : null}
           </fieldset>
 
           {mode === "zip" || mode === "html" ? (
@@ -438,7 +642,7 @@ export function CreateProjectFlow() {
               />
               <p className="field-note">{mode === "zip" ? text.zipHint : text.htmlHint}</p>
             </div>
-          ) : (
+          ) : mode === "text" ? (
             <div className="field">
               <label htmlFor={htmlId}>{text.code}</label>
               <textarea
@@ -450,13 +654,67 @@ export function CreateProjectFlow() {
               />
               <p className="field-note">{text.textHint}</p>
             </div>
+          ) : (
+            <section
+              aria-label={text.template}
+              style={{
+                display: "grid",
+                gap: 16,
+                padding: 18,
+                borderRadius: 20,
+                border: "1px solid var(--line)",
+                background: "rgba(255,255,255,0.72)"
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: "1.2rem" }}>{text.template}</h2>
+                  <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>{text.templateHint}</p>
+                </div>
+                <a className="button-secondary" href="/templates">
+                  {selectedTemplate ? text.changeTemplate : text.chooseTemplate}
+                </a>
+              </div>
+
+              {selectedTemplate ? (
+                <>
+                  <div className="status" data-tone="success" aria-live="polite">
+                    {text.selectedTemplate}
+                    <strong>{selectedTemplate.name}</strong>
+                  </div>
+                  {selectedTemplate.interactiveRequired ? (
+                    <p className="field-note" style={{ margin: 0 }}>
+                      这个模板需要互动功能，创建时会自动开启互动功能。
+                    </p>
+                  ) : null}
+                  <div style={{ display: "grid", gap: 14 }}>
+                    <h3 style={{ margin: 0 }}>{text.templateParams}</h3>
+                    {selectedTemplate.configFields.map((field) => renderTemplateField(field))}
+                  </div>
+                </>
+              ) : (
+                <div className="status" aria-live="polite">{text.templateMissing}</div>
+              )}
+            </section>
           )}
+
+          <div className="field">
+            <label htmlFor="change-note">{text.changeNote}</label>
+            <input
+              id="change-note"
+              type="text"
+              value={changeNote}
+              onChange={(event) => setChangeNote(event.target.value)}
+              placeholder={text.changeNotePlaceholder}
+              maxLength={500}
+            />
+          </div>
 
           {statusText ? <div className="status" aria-live="polite">{statusText}</div> : null}
 
           <div>
             <button className="button-primary" type="button" disabled={working} onClick={submit}>
-              {isUpdateMode ? text.updateStart : text.start}
+              {isUpdateMode ? text.updateStart : mode === "template" ? text.templateStart : text.start}
             </button>
           </div>
         </section>

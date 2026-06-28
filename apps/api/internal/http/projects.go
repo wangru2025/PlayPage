@@ -212,6 +212,8 @@ func (rt *Router) handleCreateRelease(w http.ResponseWriter, r *http.Request, pr
 		rt.handleCreateReleaseFromHTMLFile(w, r, project)
 	case "text":
 		rt.handleCreateReleaseFromHTMLText(w, r, project)
+	case "template":
+		rt.handleCreateReleaseFromTemplate(w, r, project)
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "上传类型不正确"})
 	}
@@ -231,7 +233,8 @@ func (rt *Router) handleCreateReleaseFromZip(w http.ResponseWriter, r *http.Requ
 	}
 	defer upload.Close()
 
-	release, err := rt.pub.PublishZip(r.Context(), project, upload, header.Filename)
+	changeNote := trimLimit(r.FormValue("changeNote"), 500)
+	release, err := rt.pub.PublishZip(r.Context(), project, upload, header.Filename, changeNote)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -260,7 +263,8 @@ func (rt *Router) handleCreateReleaseFromHTMLFile(w http.ResponseWriter, r *http
 		return
 	}
 
-	release, err := rt.pub.PublishSingleHTML(r.Context(), project, header.Filename, body)
+	changeNote := trimLimit(r.FormValue("changeNote"), 500)
+	release, err := rt.pub.PublishSingleHTML(r.Context(), project, header.Filename, body, changeNote)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -272,7 +276,8 @@ func (rt *Router) handleCreateReleaseFromHTMLFile(w http.ResponseWriter, r *http
 func (rt *Router) handleCreateReleaseFromHTMLText(w http.ResponseWriter, r *http.Request, project domain.Project) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxReleaseRequestBytes)
 	var input struct {
-		HTML string `json:"html"`
+		HTML       string `json:"html"`
+		ChangeNote string `json:"changeNote"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容格式不正确"})
@@ -283,13 +288,118 @@ func (rt *Router) handleCreateReleaseFromHTMLText(w http.ResponseWriter, r *http
 		return
 	}
 
-	release, err := rt.pub.PublishHTMLText(r.Context(), project, input.HTML)
+	release, err := rt.pub.PublishHTMLText(r.Context(), project, input.HTML, trimLimit(input.ChangeNote, 500))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, release)
+}
+
+func (rt *Router) handleCreateReleaseFromTemplate(w http.ResponseWriter, r *http.Request, project domain.Project) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxReleaseRequestBytes)
+	var input domain.TemplateCreateReleaseInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容格式不正确"})
+		return
+	}
+	input.TemplateID = strings.TrimSpace(input.TemplateID)
+	if input.TemplateID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请先选择模板"})
+		return
+	}
+	tpl, ok, err := rt.findTemplate(r.Context(), input.TemplateID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取模板失败"})
+		return
+	}
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "找不到这个模板"})
+		return
+	}
+	if tpl.InteractiveRequired && !project.Interactive {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个模板需要先开启互动功能"})
+		return
+	}
+	if input.Params == nil {
+		input.Params = map[string]string{}
+	}
+	for _, field := range tpl.ConfigFields {
+		if field.Required && strings.TrimSpace(input.Params[field.Name]) == "" && strings.TrimSpace(field.Default) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请填写模板参数：" + field.Label})
+			return
+		}
+	}
+
+	for _, collection := range tpl.Collections {
+		if _, found, err := rt.store.GetCollectionByName(r.Context(), project.ID, collection.Name); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "检查模板数据表失败"})
+			return
+		} else if !found {
+			if _, err := rt.store.CreateCollection(r.Context(), project.ID, domain.CollectionCreateInput{
+				Name:        collection.Name,
+				Permissions: collection.Permissions,
+				Fields:      collection.Fields,
+			}); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "创建模板数据表失败：" + err.Error()})
+				return
+			}
+		}
+	}
+
+	htmlBody := renderTemplateHTML(tpl, project, rt.lookupProjectPublicKey(r.Context(), project.ID), input.Params, false)
+	changeNote := trimLimit(input.ChangeNote, 500)
+	if changeNote == "" {
+		changeNote = "从模板创建：" + tpl.Name
+	}
+	release, err := rt.pub.PublishHTMLText(r.Context(), project, htmlBody, changeNote)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, release)
+}
+
+func (rt *Router) handleRollbackRelease(w http.ResponseWriter, r *http.Request, projectID, releaseID string) {
+	_, project, ok := rt.requireOwnedProject(w, r, projectID)
+	if !ok {
+		return
+	}
+	if releaseID == "" || releaseID == project.CurrentRelease {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请选择一个历史版本"})
+		return
+	}
+
+	releases, err := rt.store.ListReleases(r.Context(), project.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取历史版本失败"})
+		return
+	}
+	var target domain.Release
+	found := false
+	for _, release := range releases {
+		if release.ID == releaseID {
+			target = release
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "找不到这个历史版本"})
+		return
+	}
+	if err := rt.pub.EnsureLivePublicLink(project, target.PublicPath); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "切换历史版本失败"})
+		return
+	}
+	if err := rt.store.SetCurrentRelease(r.Context(), project.ID, target.ID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "保存当前版本失败"})
+		return
+	}
+	project.CurrentRelease = target.ID
+	writeJSON(w, http.StatusOK, map[string]any{"project": project, "release": target})
 }
 
 func (rt *Router) handleUpdateProjectVisibility(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -357,6 +467,71 @@ func (rt *Router) handleUpdateProjectPath(w http.ResponseWriter, r *http.Request
 	}
 
 	if project.CurrentRelease != "" {
+		oldLive := rt.releases.LivePublicDir(project.Username, project.Slug)
+		newLive := rt.releases.LivePublicDir(updated.Username, updated.Slug)
+		if oldLive != newLive {
+			_ = os.Remove(oldLive)
+			_ = os.RemoveAll(oldLive)
+		}
+
+		releases, err := rt.store.ListReleases(r.Context(), projectID)
+		if err == nil {
+			for _, release := range releases {
+				if release.ID == updated.CurrentRelease {
+					_ = rt.pub.EnsureLivePublicLink(updated, release.PublicPath)
+					break
+				}
+			}
+		}
+
+		oldParent := filepath.Dir(oldLive)
+		entries, err := os.ReadDir(oldParent)
+		if err == nil && len(entries) == 0 {
+			_ = os.Remove(oldParent)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (rt *Router) handleUpdateProjectSettings(w http.ResponseWriter, r *http.Request, projectID string) {
+	user, project, ok := rt.requireOwnedProject(w, r, projectID)
+	if !ok {
+		return
+	}
+
+	var input domain.ProjectSettingsUpdateInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容格式不正确"})
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	input.Slug = normalizePathSegment(input.Slug)
+	if input.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "作品名字不能为空"})
+		return
+	}
+	if input.Slug == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "作品链接名不能为空"})
+		return
+	}
+
+	updated, found, err := rt.store.UpdateProjectSettings(r.Context(), user.ID, projectID, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "这个作品链接名你已经用过了，请换一个"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "保存作品设置失败"})
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "找不到这个作品"})
+		return
+	}
+
+	if project.CurrentRelease != "" && project.Slug != updated.Slug {
 		oldLive := rt.releases.LivePublicDir(project.Username, project.Slug)
 		newLive := rt.releases.LivePublicDir(updated.Username, updated.Slug)
 		if oldLive != newLive {

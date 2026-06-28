@@ -2,6 +2,7 @@ package http
 
 import (
 	"archive/zip"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -13,6 +14,7 @@ import (
 	"strings"
 
 	"ai-static-host/api/internal/domain"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type releaseFile struct {
@@ -27,6 +29,11 @@ func (rt *Router) handleDeleteProject(w http.ResponseWriter, r *http.Request, pr
 	}
 	if project.Visibility == "public" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请先把作品从广场隐藏，再删除作品"})
+		return
+	}
+
+	if err := rt.createDomainDeleteRequestsBeforeProjectDelete(r, user, project); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "创建独立网址删除申请失败"})
 		return
 	}
 
@@ -51,6 +58,38 @@ func (rt *Router) handleDeleteProject(w http.ResponseWriter, r *http.Request, pr
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (rt *Router) createDomainDeleteRequestsBeforeProjectDelete(r *http.Request, user domain.User, project domain.Project) error {
+	items, err := rt.store.ListProjectDomains(r.Context(), project.ID)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.Status != "active" && item.Status != "pending" {
+			continue
+		}
+		_, err := rt.store.CreateProjectDomainDeleteRequest(r.Context(), domain.ProjectDomainDeleteRequest{
+			DomainID:    item.ID,
+			ProjectID:   project.ID,
+			OwnerUserID: user.ID,
+			Domain:      item.Domain,
+			Reason:      "用户删除作品，需管理员删除对应独立网址配置",
+			Status:      "pending",
+		})
+		if err == nil {
+			continue
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			continue
+		}
+		if strings.Contains(err.Error(), "待处理的删除申请") {
+			continue
+		}
+		return err
+	}
+	return nil
 }
 
 func (rt *Router) handleDownloadProjectSource(w http.ResponseWriter, r *http.Request, projectID string) {

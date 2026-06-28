@@ -58,7 +58,7 @@ func NewPublisher(store storage.Store, layout *storage.ReleaseLayout) *Publisher
 	return &Publisher{store: store, layout: layout}
 }
 
-func (p *Publisher) PublishZip(ctx context.Context, project domain.Project, file multipart.File, filename string) (domain.Release, error) {
+func (p *Publisher) PublishZip(ctx context.Context, project domain.Project, file multipart.File, filename, changeNote string) (domain.Release, error) {
 	releaseKey, archiveDir, releaseDir, liveDir, archivePath, err := p.prepareRelease(project, filename)
 	if err != nil {
 		log.Printf("publish_zip_error stage=prepare_release project_id=%s project_name=%q filename=%q error=%q", project.ID, project.Name, filename, err.Error())
@@ -75,10 +75,10 @@ func (p *Publisher) PublishZip(ctx context.Context, project domain.Project, file
 		return domain.Release{}, err
 	}
 
-	return p.finishRelease(ctx, project, releaseKey, archiveDir, releaseDir, liveDir, archivePath)
+	return p.finishRelease(ctx, project, releaseKey, archiveDir, releaseDir, liveDir, archivePath, changeNote)
 }
 
-func (p *Publisher) PublishSingleHTML(ctx context.Context, project domain.Project, filename string, body []byte) (domain.Release, error) {
+func (p *Publisher) PublishSingleHTML(ctx context.Context, project domain.Project, filename string, body []byte, changeNote string) (domain.Release, error) {
 	releaseKey, archiveDir, releaseDir, liveDir, archivePath, err := p.prepareRelease(project, filename)
 	if err != nil {
 		return domain.Release{}, err
@@ -100,14 +100,14 @@ func (p *Publisher) PublishSingleHTML(ctx context.Context, project domain.Projec
 		return domain.Release{}, err
 	}
 
-	return p.finishRelease(ctx, project, releaseKey, archiveDir, releaseDir, liveDir, archivePath)
+	return p.finishRelease(ctx, project, releaseKey, archiveDir, releaseDir, liveDir, archivePath, changeNote)
 }
 
-func (p *Publisher) PublishHTMLText(ctx context.Context, project domain.Project, body string) (domain.Release, error) {
-	return p.PublishSingleHTML(ctx, project, "index.txt", []byte(body))
+func (p *Publisher) PublishHTMLText(ctx context.Context, project domain.Project, body string, changeNote string) (domain.Release, error) {
+	return p.PublishSingleHTML(ctx, project, "index.txt", []byte(body), changeNote)
 }
 
-func (p *Publisher) PublishPatchedHTML(ctx context.Context, project domain.Project, sourcePublicDir, entryFile string, body []byte) (domain.Release, error) {
+func (p *Publisher) PublishPatchedHTML(ctx context.Context, project domain.Project, sourcePublicDir, entryFile string, body []byte, changeNote string) (domain.Release, error) {
 	releaseKey, archiveDir, releaseDir, liveDir, archivePath, err := p.prepareRelease(project, "ai-repair.html")
 	if err != nil {
 		return domain.Release{}, err
@@ -128,7 +128,7 @@ func (p *Publisher) PublishPatchedHTML(ctx context.Context, project domain.Proje
 	if err := os.WriteFile(archivePath, body, 0o644); err != nil {
 		return domain.Release{}, err
 	}
-	return p.finishRelease(ctx, project, releaseKey, archiveDir, releaseDir, liveDir, archivePath)
+	return p.finishRelease(ctx, project, releaseKey, archiveDir, releaseDir, liveDir, archivePath, changeNote)
 }
 
 func (p *Publisher) CreatePreview(project domain.Project, sourcePublicDir, entryFile, jobID string, body []byte) (string, error) {
@@ -257,6 +257,7 @@ func (p *Publisher) finishRelease(
 	releaseDir string,
 	liveDir string,
 	archivePath string,
+	changeNote string,
 ) (domain.Release, error) {
 	report, err := validateReleaseTree(releaseDir)
 	if err != nil {
@@ -301,6 +302,7 @@ func (p *Publisher) finishRelease(
 		ArchivePath: archivePath,
 		PublicPath:  releaseDir,
 		EntryFile:   entryFile,
+		ChangeNote:  strings.TrimSpace(changeNote),
 		Warnings:    report.Warnings,
 	}
 

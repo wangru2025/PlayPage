@@ -9,6 +9,7 @@ type Release struct {
 	ArchivePath string    `json:"archivePath"`
 	PublicPath  string    `json:"publicPath"`
 	EntryFile   string    `json:"entryFile"`
+	ChangeNote  string    `json:"changeNote"`
 	Warnings    []string  `json:"warnings,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 }

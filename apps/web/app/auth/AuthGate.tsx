@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { postJSON } from "@/lib/api";
+import { getJSON, postJSON } from "@/lib/api";
 
 type AuthCodeResponse = {
   email: string;
@@ -33,12 +33,14 @@ const text = {
   sentFail: "发送验证码失败。",
   verifyOk: "登录成功，正在进入作品页。",
   verifyFail: "登录失败。",
+  checkingSession: "正在检查登录状态。",
   needEmail: "请先填写邮箱。",
   needUsername: "请先填写公开名字。",
   needCode: "请先填写验证码。"
 };
 
 export function AuthGate() {
+  const [checkingSession, setCheckingSession] = useState(true);
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
@@ -53,6 +55,18 @@ export function AuthGate() {
     setStatusText(message);
     setStatusTone(tone);
   }
+
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        await getJSON("/api/v1/me");
+        window.location.replace("/projects");
+      } catch {
+        setCheckingSession(false);
+      }
+    }
+    void checkSession();
+  }, []);
 
   useEffect(() => {
     if (resendSeconds <= 0) {
@@ -124,6 +138,21 @@ export function AuthGate() {
     } finally {
       setWorking(false);
     }
+  }
+
+  if (checkingSession) {
+    return (
+      <section style={{ display: "grid", gap: 18 }}>
+        <header className="panel" style={{ padding: 28, display: "grid", gap: 10 }}>
+          <h1 style={{ margin: 0, fontSize: "2.5rem" }}>{text.title}</h1>
+        </header>
+        <section className="panel" style={{ padding: 24, display: "grid", gap: 18, maxWidth: 680 }}>
+          <div className="status" aria-live="polite">
+            {text.checkingSession}
+          </div>
+        </section>
+      </section>
+    );
   }
 
   return (

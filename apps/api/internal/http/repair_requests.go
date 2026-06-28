@@ -27,7 +27,7 @@ func isOpenRepairStatus(status string) bool {
 
 func isValidRepairStatus(status string) bool {
 	switch status {
-	case "pending", "processing", "need_info", "fixed", "rejected", "closed":
+	case "pending", "processing", "need_info", "fixed", "ai_fixed", "rejected", "closed":
 		return true
 	default:
 		return false

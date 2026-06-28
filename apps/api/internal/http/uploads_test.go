@@ -68,6 +68,62 @@ func TestCreateProjectWithInteractiveEnabled(t *testing.T) {
 	}
 }
 
+func TestUpdateProjectSettings(t *testing.T) {
+	cfg := config.Config{
+		AppName:    "test",
+		ListenAddr: "127.0.0.1:0",
+		DataRoot:   filepath.Join(t.TempDir(), "apps"),
+		PublicBase: "https://example.com",
+	}
+
+	handler := NewRouter(cfg)
+	auth := signInForTest(t, handler)
+
+	projectBody := bytes.NewBufferString(`{"name":"旧名字","slug":"old-slug","interactive":false,"analyticsEnabled":false}`)
+	projectReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects", projectBody)
+	projectReq.Header.Set("Content-Type", "application/json")
+	addAuth(projectReq, auth)
+	projectResp := httptest.NewRecorder()
+	handler.ServeHTTP(projectResp, projectReq)
+	if projectResp.Code != http.StatusCreated {
+		t.Fatalf("create project status = %d body = %s", projectResp.Code, projectResp.Body.String())
+	}
+
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(projectResp.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	settingsBody := bytes.NewBufferString(`{"name":"新名字","slug":"new-slug","interactive":true,"analyticsEnabled":true}`)
+	settingsReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+created.ID+"/settings", settingsBody)
+	settingsReq.Header.Set("Content-Type", "application/json")
+	addAuth(settingsReq, auth)
+	settingsResp := httptest.NewRecorder()
+	handler.ServeHTTP(settingsResp, settingsReq)
+	if settingsResp.Code != http.StatusOK {
+		t.Fatalf("update settings status = %d body = %s", settingsResp.Code, settingsResp.Body.String())
+	}
+
+	var updated struct {
+		Name             string `json:"name"`
+		Slug             string `json:"slug"`
+		Interactive      bool   `json:"interactive"`
+		AnalyticsEnabled bool   `json:"analyticsEnabled"`
+		PublicURL        string `json:"publicUrl"`
+	}
+	if err := json.Unmarshal(settingsResp.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Name != "新名字" || updated.Slug != "new-slug" || !updated.Interactive || !updated.AnalyticsEnabled {
+		t.Fatalf("unexpected updated project: %+v", updated)
+	}
+	if updated.PublicURL != "https://example.com/@demo/new-slug" {
+		t.Fatalf("unexpected public URL: %s", updated.PublicURL)
+	}
+}
+
 func TestCreateReleaseFromZip(t *testing.T) {
 	dataRoot := filepath.Join(t.TempDir(), "apps")
 	cfg := config.Config{

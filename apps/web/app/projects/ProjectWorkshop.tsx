@@ -75,6 +75,8 @@ const text = {
   interactiveOff: "未启用互动功能",
   analyticsOn: "已启用访问量统计",
   openStats: "统计数据",
+  projectSettings: "作品设置",
+  releaseHistory: "作品历史版本",
   uploadNew: "上传新版本",
   downloadSource: "下载作品源文件",
   deleteProject: "删除作品",
@@ -361,6 +363,12 @@ export function ProjectWorkshop() {
                 >
                   <a className="button-primary" href={`/projects/new?projectId=${project.id}`}>
                     {text.uploadNew}
+                  </a>
+                  <a className="button-secondary" href={`/projects/${project.id}/settings`}>
+                    {text.projectSettings}
+                  </a>
+                  <a className="button-secondary" href={`/projects/${project.id}/releases`}>
+                    {text.releaseHistory}
                   </a>
                   <button
                     className="button-secondary"

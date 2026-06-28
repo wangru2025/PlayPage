@@ -134,6 +134,42 @@ export async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function postBlob(path: string, body: unknown): Promise<{ blob: Blob; filename: string }> {
+  const response = await requestWithOptionalRetry(path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  }, true);
+
+  if (!response.ok) {
+    const { message } = await parseError(response);
+    throw new Error(message);
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: parseDownloadFilename(response.headers.get("Content-Disposition")) || "download"
+  };
+}
+
+function parseDownloadFilename(disposition: string | null): string {
+  if (!disposition) {
+    return "";
+  }
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const fallbackMatch = disposition.match(/filename="([^"]+)"/i) ?? disposition.match(/filename=([^;]+)/i);
+  return fallbackMatch ? fallbackMatch[1].trim() : "";
+}
+
 export async function postForm<T>(path: string, body: FormData): Promise<T> {
   const response = await requestWithOptionalRetry(path, {
     method: "POST",

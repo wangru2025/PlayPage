@@ -59,6 +59,10 @@ func NewRouter(cfg config.Config) http.Handler {
 	mux.HandleFunc("POST /api/v1/client-errors", router.handleClientErrorReport)
 	mux.HandleFunc("GET /api/v1/projects", router.handleListProjects)
 	mux.HandleFunc("POST /api/v1/projects", router.handleCreateProject)
+	mux.HandleFunc("GET /api/v1/templates", router.handleListTemplates)
+	mux.HandleFunc("/api/v1/templates/", router.handleTemplateRoutes)
+	mux.HandleFunc("POST /api/v1/template-submissions", router.handleCreateTemplateSubmission)
+	mux.HandleFunc("GET /api/v1/me/template-submissions", router.handleListMyTemplateSubmissions)
 	mux.HandleFunc("GET /api/v1/admin/users", router.handleAdminListUsers)
 	mux.HandleFunc("/api/v1/admin/users/", router.handleAdminUserRoutes)
 	mux.HandleFunc("GET /api/v1/admin/projects", router.handleAdminListProjects)
@@ -66,8 +70,13 @@ func NewRouter(cfg config.Config) http.Handler {
 	mux.HandleFunc("/api/v1/admin/upgrade-requests/", router.handleAdminRoutes)
 	mux.HandleFunc("GET /api/v1/admin/project-domains", router.handleAdminListProjectDomains)
 	mux.HandleFunc("/api/v1/admin/project-domains/", router.handleAdminProjectDomainRoutes)
+	mux.HandleFunc("GET /api/v1/admin/project-domain-delete-requests", router.handleAdminListProjectDomainDeleteRequests)
+	mux.HandleFunc("/api/v1/admin/project-domain-delete-requests/", router.handleAdminProjectDomainDeleteRequestRoutes)
 	mux.HandleFunc("GET /api/v1/admin/repair-requests", router.handleAdminListRepairRequests)
 	mux.HandleFunc("/api/v1/admin/repair-requests/", router.handleAdminRepairRequestRoutes)
+	mux.HandleFunc("GET /api/v1/admin/template-submissions", router.handleAdminListTemplateSubmissions)
+	mux.HandleFunc("/api/v1/admin/template-submissions/", router.handleAdminTemplateSubmissionRoutes)
+	mux.HandleFunc("/api/v1/domain-site/", router.handleProjectDomainSite)
 	mux.HandleFunc("GET /api/v1/square", router.handleListSquare)
 	mux.HandleFunc("/api/v1/public/projects/", router.handlePublicProjectRoutes)
 	mux.HandleFunc("/api/v1/projects/", router.handleProjectRoutes)
@@ -140,6 +149,8 @@ func (rt *Router) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 		rt.handleProjectInteractiveDoc(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "stats" && r.Method == http.MethodGet:
 		rt.handleProjectStats(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "data-export" && r.Method == http.MethodPost:
+		rt.handleExportProjectData(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "collections" && r.Method == http.MethodGet:
 		rt.handleListCollections(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "collections" && r.Method == http.MethodPost:
@@ -154,6 +165,10 @@ func (rt *Router) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 		rt.handleListProjectDomains(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "domains" && r.Method == http.MethodPost:
 		rt.handleCreateProjectDomain(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "domain-delete-requests" && r.Method == http.MethodGet:
+		rt.handleListProjectDomainDeleteRequests(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "domain-delete-requests" && r.Method == http.MethodPost:
+		rt.handleCreateProjectDomainDeleteRequest(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "repair-requests" && r.Method == http.MethodGet:
 		rt.handleListProjectRepairRequests(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "repair-requests" && r.Method == http.MethodPost:
@@ -180,10 +195,14 @@ func (rt *Router) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 		rt.handleUpdateProjectVisibility(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "path" && r.Method == http.MethodPost:
 		rt.handleUpdateProjectPath(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "settings" && r.Method == http.MethodPost:
+		rt.handleUpdateProjectSettings(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "releases" && r.Method == http.MethodGet:
 		rt.handleListReleases(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "releases" && r.Method == http.MethodPost:
 		rt.handleCreateRelease(w, r, projectID)
+	case len(parts) == 4 && parts[1] == "releases" && parts[3] == "rollback" && r.Method == http.MethodPost:
+		rt.handleRollbackRelease(w, r, projectID, parts[2])
 	case len(parts) == 4 && parts[1] == "collections" && parts[3] == "records" && r.Method == http.MethodGet:
 		rt.handleListRecords(w, r, projectID, parts[2])
 	case len(parts) == 4 && parts[1] == "collections" && parts[3] == "records" && r.Method == http.MethodPost:

@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import { getJSON, postJSON } from "@/lib/api";
 import { AdminRepairRequests } from "./AdminRepairRequests";
+import { AdminDomainDeleteRequests } from "./AdminDomainDeleteRequests";
+import { AdminTemplateSubmissions } from "./AdminTemplateSubmissions";
 
 type AdminUser = { id: string; email: string; username: string; status: string; role: string; planCode: string; projectCount: number; createdAt: string; };
 type UserUpdatePayload = { role: string; planCode: string; };
 type AdminProject = { id: string; name: string; slug: string; username: string; ownerUserId: string; ownerEmail: string; interactive: boolean; visibility: string; currentReleaseId: string; publicUrl: string; createdAt: string; };
 type UpgradeRequest = { id: string; userId: string; userEmail: string; currentPlan: string; targetPlan: string; paymentMethod: string; payerNote: string; status: string; adminNote: string; reviewedBy: string; createdAt: string; };
 type ProjectDomainRequest = { id: string; projectId: string; projectName: string; projectPublicUrl: string; ownerUserId: string; ownerEmail: string; username: string; subdomain: string; domain: string; status: string; rejectReason: string; adminNote: string; reviewedBy: string; createdAt: string; };
-type AdminSection = "repairs" | "upgrades" | "domains" | "users" | "projects";
+type AdminSection = "repairs" | "templates" | "upgrades" | "domains" | "domainDeletes" | "users" | "projects";
 
 const text = {
   title: "管理后台",
@@ -20,6 +22,7 @@ const text = {
   projects: "作品管理",
   upgrades: "升级申请",
   repairs: "网页修复申请",
+  templates: "模板投稿审核",
   role: "角色",
   plan: "套餐",
   owner: "作者",
@@ -35,6 +38,7 @@ const text = {
   saveUser: "保存用户设置",
   savingUser: "正在保存用户设置……",
   domains: "独立网址审核",
+  domainDeletes: "删除独立网址申请",
   domainReviewing: "正在处理独立网址申请……",
   domainApprove: "标记为已通过",
   domainReject: "驳回申请",
@@ -58,7 +62,7 @@ const text = {
 };
 
 const sections: Array<{ id: AdminSection; label: string }> = [
-  { id: "repairs", label: text.repairs }, { id: "upgrades", label: text.upgrades }, { id: "domains", label: text.domains }, { id: "users", label: text.users }, { id: "projects", label: text.projects }
+  { id: "repairs", label: text.repairs }, { id: "templates", label: text.templates }, { id: "upgrades", label: text.upgrades }, { id: "domains", label: text.domains }, { id: "domainDeletes", label: text.domainDeletes }, { id: "users", label: text.users }, { id: "projects", label: text.projects }
 ];
 
 const tableWrapStyle = { overflowX: "auto" as const };
@@ -104,6 +108,10 @@ export function AdminConsole() {
       </header>
 
       {activeSection === "repairs" ? <AdminRepairRequests /> : null}
+
+      {activeSection === "templates" ? <AdminTemplateSubmissions /> : null}
+
+      {activeSection === "domainDeletes" ? <AdminDomainDeleteRequests /> : null}
 
       {activeSection === "upgrades" ? (<section className="panel" style={{ padding: 24, display: "grid", gap: 16 }} aria-labelledby="admin-upgrades-title"><div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}><h2 id="admin-upgrades-title" style={{ margin: 0 }}>{text.upgrades}</h2><button className="button-secondary" type="button" onClick={() => setShowFinishedRequests((value) => !value)}>{showFinishedRequests ? text.hideFinished : text.showFinished}</button></div>{visibleRequests.length === 0 ? <p style={{ margin: 0, color: "var(--muted)" }}>{text.noUpgradeRequests}</p> : null}<div style={tableWrapStyle} role="region" aria-label={`${text.upgrades}${text.tableRegion}`}><table style={tableStyle}><thead><tr><th style={cellStyle}>用户</th><th style={cellStyle}>{text.sourcePlan}</th><th style={cellStyle}>{text.targetPlan}</th><th style={cellStyle}>{text.paymentMethod}</th><th style={cellStyle}>{text.payerNote}</th><th style={cellStyle}>{text.status}</th><th style={cellStyle}>{text.actions}</th></tr></thead><tbody>{visibleRequests.map((request) => (<tr key={request.id}><td style={cellStyle}>{request.userEmail}</td><td style={cellStyle}>{planLabel(request.currentPlan)}</td><td style={cellStyle}>{planLabel(request.targetPlan)}</td><td style={cellStyle}>{request.paymentMethod === "wechat" ? "微信" : "其他"}</td><td style={{ ...cellStyle, whiteSpace: "pre-wrap" }}>{request.payerNote || "未填写"}</td><td style={cellStyle}>{requestStatusLabel(request.status)}</td><td style={cellStyle}>{request.status === "pending" ? (<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="button-primary" type="button" onClick={() => reviewRequest(request.id, "approved")}>{text.approve}</button><button className="button-ghost" type="button" onClick={() => reviewRequest(request.id, "rejected")}>{text.reject}</button></div>) : "已处理"}</td></tr>))}</tbody></table></div></section>) : null}
 

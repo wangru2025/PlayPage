@@ -1,0 +1,92 @@
+name: PlayPage Client Build
+
+on:
+  push:
+    paths:
+      - 'PlayPageClient/**'
+      - '.github/workflows/playpage-client.yml'
+  pull_request:
+    paths:
+      - 'PlayPageClient/**'
+      - '.github/workflows/playpage-client.yml'
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows WinForms
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: PlayPageClient
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore src/PlayPage.Windows/PlayPage.Windows.csproj
+
+      - name: Build
+        run: dotnet build src/PlayPage.Windows/PlayPage.Windows.csproj -c Release --no-restore
+
+      - name: Publish portable folder
+        run: dotnet publish src/PlayPage.Windows/PlayPage.Windows.csproj -c Release -o artifacts/windows
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlayPage-Windows
+          path: PlayPageClient/artifacts/windows
+
+  android:
+    name: Android traditional Views
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: PlayPageClient
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Android workload
+        run: dotnet workload install android
+
+      - name: Restore
+        run: dotnet restore src/PlayPage.Android/PlayPage.Android.csproj
+
+      - name: Build APK
+        run: dotnet build src/PlayPage.Android/PlayPage.Android.csproj -c Release --no-restore
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          mkdir -p artifacts/android
+          find src/PlayPage.Android/bin/Release \( -name '*.apk' -o -name '*.aab' \) -print -exec cp {} artifacts/android/ \;
+          ls -la artifacts/android
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlayPage-Android
+          path: PlayPageClient/artifacts/android

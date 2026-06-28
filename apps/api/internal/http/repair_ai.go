@@ -338,10 +338,11 @@ func (rt *Router) handleRepairAIPublish(w http.ResponseWriter, r *http.Request, 
 		writeJSON(w, 400, map[string]string{"error": "这个作品还没有可发布的旧版本"})
 		return
 	}
-	if _, err := rt.pub.PublishPatchedHTML(r.Context(), project, rel.PublicPath, rel.EntryFile, []byte(job.GeneratedHTML)); err != nil {
+	if _, err := rt.pub.PublishPatchedHTML(r.Context(), project, rel.PublicPath, rel.EntryFile, []byte(job.GeneratedHTML), "AI 圆桌修复发布"); err != nil {
 		writeJSON(w, 500, map[string]string{"error": "发布修复版本失败：" + err.Error()})
 		return
 	}
+	_, _ = rt.store.UpdateRepairRequest(r.Context(), requestID, "ai_fixed", "AI 圆桌已修复并由用户确认发布。", "")
 	job.Status = "published"
 	job.FinishedAt = time.Now().UTC()
 	job, _ = rt.store.UpdateRepairAIJob(r.Context(), job)
