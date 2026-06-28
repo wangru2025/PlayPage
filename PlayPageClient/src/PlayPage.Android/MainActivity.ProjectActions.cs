@@ -408,6 +408,50 @@ public sealed partial class MainActivity
         return uri.LastPathSegment;
     }
 
+
+    private async System.Threading.Tasks.Task ShowReleasesAsync(ProjectSummary project)
+    {
+        var releases = await _client.ListReleasesAsync(project.Id);
+        if (releases.Count == 0)
+        {
+            ShowMessage("历史版本", "暂无历史版本。");
+            return;
+        }
+
+        var ordered = releases.OrderByDescending(r => r.CreatedAt).ToList();
+        var labels = ordered.Select(r =>
+        {
+            var note = string.IsNullOrWhiteSpace(r.ChangeNote) ? "无更新说明" : r.ChangeNote;
+            return $"{r.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}
+{note}";
+        }).ToArray();
+
+        new AlertDialog.Builder(this)
+            .SetTitle("选择要回滚的版本")
+            .SetItems(labels, (sender, args) =>
+            {
+                var selected = ordered[args.Which];
+                new AlertDialog.Builder(this)
+                    .SetTitle("确认回滚")
+                    .SetMessage("确认回滚到这个版本吗？
+" + labels[args.Which])
+                    .SetPositiveButton("回滚", async (_, _) =>
+                    {
+                        try
+                        {
+                            await _client.RollbackReleaseAsync(project.Id, selected.Id);
+                            SetStatus("作品已经回滚到所选版本。");
+                            await LoadProjectsAsync();
+                        }
+                        catch (System.Exception ex) { ShowError(ex); }
+                    })
+                    .SetNegativeButton("取消", (_, _) => { })
+                    .Show();
+            })
+            .SetNegativeButton("关闭", (_, _) => { })
+            .Show();
+    }
+
     private async System.Threading.Tasks.Task DownloadSourceAsync(ProjectSummary project)
     {
         var file = await _client.DownloadProjectSourceAsync(project.Id);

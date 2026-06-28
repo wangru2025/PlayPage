@@ -47,7 +47,19 @@ public sealed partial class MainForm
         var p = SelectedProject();
         if (p == null) return;
         var items = await _client.ListReleasesAsync(p.Id);
-        MessageBox.Show(this, items.Count == 0 ? "暂无历史版本。" : string.Join("\n", items), "历史版本");
+        if (items.Count == 0)
+        {
+            MessageBox.Show(this, "暂无历史版本。", "历史版本");
+            return;
+        }
+        using var form = new ReleaseHistoryForm(items);
+        if (form.ShowDialog(this) != DialogResult.OK || form.SelectedRelease == null) return;
+        var selected = form.SelectedRelease;
+        var note = string.IsNullOrWhiteSpace(selected.ChangeNote) ? selected.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss") : selected.ChangeNote;
+        if (MessageBox.Show(this, $"确认回滚到这个版本吗？\n{note}", "确认回滚", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        await _client.RollbackReleaseAsync(p.Id, selected.Id);
+        SetStatus("作品已经回滚到所选版本。", false);
+        await LoadProjectsAsync();
     }
 
     private async Task CreateProjectAsync()
