@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -89,13 +90,38 @@ public sealed class PlayPageApiClient
     public Task<IReadOnlyList<RepairRequestInfo>> ListRepairRequestsAsync(string projectId, CancellationToken cancellationToken = default) => GetItemsAsync<RepairRequestInfo>(ProjectPath(projectId, "repair-requests"), cancellationToken);
     public Task<RepairRequestInfo> CreateRepairRequestAsync(string projectId, RepairRequestCreateRequest request, CancellationToken cancellationToken = default) => SendJsonAsync<RepairRequestInfo>(HttpMethod.Post, ProjectPath(projectId, "repair-requests"), request, cancellationToken);
     public Task<RepairRequestInfo> ReplyRepairRequestAsync(string projectId, string requestId, string reply, CancellationToken cancellationToken = default) => SendJsonAsync<RepairRequestInfo>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/reply"), new RepairReplyRequest { Reply = reply }, cancellationToken);
-    public Task<RepairAIJobInfo> StartRepairAIAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendJsonAsync<RepairAIJobInfo>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/start"), new { }, cancellationToken);
-    public Task<RepairAIJobInfo> StopRepairAIAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendJsonAsync<RepairAIJobInfo>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/stop"), new { }, cancellationToken);
-    public Task<RepairAIJobInfo> GetLatestRepairAIAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendAsync<RepairAIJobInfo>(HttpMethod.Get, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/latest"), cancellationToken);
-    public Task<RepairAIJobInfo> SendRepairAIFeedbackAsync(string projectId, string requestId, string feedback, CancellationToken cancellationToken = default) => SendJsonAsync<RepairAIJobInfo>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/feedback"), new RepairAIFeedbackRequest { Feedback = feedback }, cancellationToken);
-    public Task<RepairAIJobInfo> CreateRepairAIPreviewAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendJsonAsync<RepairAIJobInfo>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/preview"), new { }, cancellationToken);
-    public Task<ReleaseInfo> PublishRepairAIAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendJsonAsync<ReleaseInfo>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/publish"), new { }, cancellationToken);
+    public Task<RepairAIState> StartRepairAIAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendJsonAsync<RepairAIState>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/start"), new { }, cancellationToken);
+    public Task<RepairAIState> StopRepairAIAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendJsonAsync<RepairAIState>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/stop"), new { }, cancellationToken);
+    public Task<RepairAIState> GetLatestRepairAIAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendAsync<RepairAIState>(HttpMethod.Get, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/latest"), cancellationToken);
+    public Task<RepairAIState> SendRepairAIFeedbackAsync(string projectId, string requestId, string feedback, CancellationToken cancellationToken = default) => SendJsonAsync<RepairAIState>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/feedback"), new RepairAIFeedbackRequest { Feedback = feedback }, cancellationToken);
+    public Task<RepairAIState> CreateRepairAIPreviewAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendJsonAsync<RepairAIState>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/preview"), new { }, cancellationToken);
+    public Task<RepairAIState> PublishRepairAIAsync(string projectId, string requestId, CancellationToken cancellationToken = default) => SendJsonAsync<RepairAIState>(HttpMethod.Post, ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/publish"), new { }, cancellationToken);
 
+    public async Task WatchRepairAIAsync(string projectId, string requestId, string jobId, Func<RepairAIWebSocketEvent, Task> onEvent, CancellationToken cancellationToken = default)
+    {
+        var baseUri = _http.BaseAddress ?? throw new PlayPageApiException("API 地址没有配置。");
+        var path = ProjectPath(projectId, $"repair-requests/{Uri.EscapeDataString(requestId)}/ai/ws");
+        if (!string.IsNullOrWhiteSpace(jobId)) path += "?jobId=" + Uri.EscapeDataString(jobId);
+        var builder = new UriBuilder(new Uri(baseUri, path)) { Scheme = baseUri.Scheme == "https" ? "wss" : "ws" };
+        using var socket = new ClientWebSocket();
+        if (!string.IsNullOrWhiteSpace(_token)) socket.Options.SetRequestHeader("Authorization", "Bearer " + _token);
+        await socket.ConnectAsync(builder.Uri, cancellationToken).ConfigureAwait(false);
+        var buffer = new byte[64 * 1024];
+        while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
+        {
+            using var ms = new MemoryStream();
+            WebSocketReceiveResult result;
+            do
+            {
+                result = await socket.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (result.MessageType == WebSocketMessageType.Close) return;
+                ms.Write(buffer, 0, result.Count);
+            } while (!result.EndOfMessage);
+            var json = Encoding.UTF8.GetString(ms.ToArray());
+            var item = JsonSerializer.Deserialize<RepairAIWebSocketEvent>(json, _jsonOptions);
+            if (item != null) await onEvent(item).ConfigureAwait(false);
+        }
+    }
     public Task<IReadOnlyList<TemplateInfo>> ListTemplatesAsync(CancellationToken cancellationToken = default) => GetItemsAsync<TemplateInfo>("api/v1/templates", cancellationToken);
     public async Task<TemplateInfo> GetTemplateAsync(string templateId, CancellationToken cancellationToken = default) => (await SendAsync<TemplateEnvelope>(HttpMethod.Get, $"api/v1/templates/{Uri.EscapeDataString(templateId)}", cancellationToken).ConfigureAwait(false)).Template;
     public Task<IReadOnlyList<UpgradeRequestInfo>> ListMyUpgradeRequestsAsync(CancellationToken cancellationToken = default) => GetItemsAsync<UpgradeRequestInfo>("api/v1/me/upgrade-requests", cancellationToken);
@@ -211,4 +237,5 @@ public sealed class PlayPageApiClient
         return null;
     }
 }
+
 

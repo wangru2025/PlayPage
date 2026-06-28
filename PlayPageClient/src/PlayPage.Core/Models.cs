@@ -352,6 +352,22 @@ public sealed class ListEnvelope<T>
     public List<T> Items { get; set; } = new List<T>();
 }
 
+public sealed class RepairAIState
+{
+    public RepairAIJobInfo Job { get; set; } = new RepairAIJobInfo();
+    public List<RepairAIMessageInfo> Messages { get; set; } = new List<RepairAIMessageInfo>();
+    public bool NeedsAdmin { get; set; }
+    public string Message { get; set; } = "";
+    public string Url { get; set; } = "";
+}
+
+public sealed class RepairAIWebSocketEvent
+{
+    public string Type { get; set; } = "";
+    public RepairAIJobInfo? Job { get; set; }
+    public List<RepairAIMessageInfo>? Messages { get; set; }
+    public RepairAIMessageInfo? Message { get; set; }
+}
 public sealed class TemplateEnvelope
 {
     public TemplateInfo Template { get; set; } = new TemplateInfo();
@@ -480,5 +496,6 @@ public sealed class StatusEnvelope
 {
     public string Status { get; set; } = "";
 }
+
 
 

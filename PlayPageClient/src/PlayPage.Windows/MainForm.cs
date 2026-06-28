@@ -107,6 +107,9 @@ public sealed class MainForm : Form
         projectMenu.DropDownItems.Add("下载作品源码(&D)", null, async (_, _) => await DownloadSourceAsync());
         projectMenu.DropDownItems.Add("作品设置(&S)", null, async (_, _) => await EditSettingsAsync());
         projectMenu.DropDownItems.Add("申请修复(&R)", null, async (_, _) => await CreateRepairAsync());
+        projectMenu.DropDownItems.Add("启动/查看 AI 圆桌(&A)", null, async (_, _) => await StartOrShowRepairAIAsync());
+        projectMenu.DropDownItems.Add("AI 修复预览(&V)", null, async (_, _) => await PreviewRepairAIAsync());
+        projectMenu.DropDownItems.Add("发布 AI 修复(&P)", null, async (_, _) => await PublishRepairAIAsync());
         projectMenu.DropDownItems.Add("申请独立网址(&I)", null, async (_, _) => await CreateDomainAsync());
         projectMenu.DropDownItems.Add("统计数据(&T)", null, async (_, _) => await ShowStatsAsync());
         projectMenu.DropDownItems.Add("导出数据表(&E)", null, async (_, _) => await ExportDataAsync());
@@ -315,6 +318,78 @@ public sealed class MainForm : Form
         await System.IO.File.WriteAllBytesAsync(dialog.FileName, file.Content);
         SetStatus("数据表已导出。", false);
     }
+    private async Task<RepairRequestInfo?> FirstRepairRequestAsync(ProjectSummary project)
+    {
+        var repairs = await _client.ListRepairRequestsAsync(project.Id);
+        if (repairs.Count == 0)
+        {
+            MessageBox.Show(this, "这个作品还没有修复申请。", "AI 圆桌");
+            return null;
+        }
+        return repairs[0];
+    }
+
+    private async Task StartOrShowRepairAIAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        var repair = await FirstRepairRequestAsync(p);
+        if (repair == null) return;
+        try
+        {
+            var latest = await _client.GetLatestRepairAIAsync(p.Id, repair.Id);
+            ShowAIState(latest);
+        }
+        catch
+        {
+            if (MessageBox.Show(this, "还没有 AI 圆桌记录，是否立即启动？", "AI 圆桌", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+            var started = await _client.StartRepairAIAsync(p.Id, repair.Id);
+            ShowAIState(started);
+        }
+    }
+
+    private async Task PreviewRepairAIAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        var repair = await FirstRepairRequestAsync(p);
+        if (repair == null) return;
+        var state = await _client.CreateRepairAIPreviewAsync(p.Id, repair.Id);
+        if (!string.IsNullOrWhiteSpace(state.Url))
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = state.Url, UseShellExecute = true });
+        }
+        ShowAIState(state);
+    }
+
+    private async Task PublishRepairAIAsync()
+    {
+        var p = SelectedProject();
+        if (p == null) return;
+        var repair = await FirstRepairRequestAsync(p);
+        if (repair == null) return;
+        if (MessageBox.Show(this, "确认发布 AI 修复版本？", "发布 AI 修复", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+        var state = await _client.PublishRepairAIAsync(p.Id, repair.Id);
+        ShowAIState(state);
+        await LoadProjectsAsync();
+    }
+
+    private void ShowAIState(RepairAIState state)
+    {
+        var lines = new List<string>();
+        lines.Add($"状态：{state.Job.Status}；第 {state.Job.Round} 轮");
+        if (!string.IsNullOrWhiteSpace(state.Job.ErrorMessage)) lines.Add("错误：" + state.Job.ErrorMessage);
+        if (!string.IsNullOrWhiteSpace(state.Job.PreviewUrl)) lines.Add("预览：" + state.Job.PreviewUrl);
+        if (!string.IsNullOrWhiteSpace(state.Message)) lines.Add(state.Message);
+        lines.Add("");
+        foreach (var message in state.Messages.TakeLast(20))
+        {
+            lines.Add($"{message.MessageSeq}. {message.AgentName}");
+            lines.Add(message.Content);
+            lines.Add("");
+        }
+        MessageBox.Show(this, string.Join("\n", lines), "AI 圆桌");
+    }
     private async Task ShowTemplatesAsync()
     {
         var items = await _client.ListTemplatesAsync();
@@ -426,6 +501,7 @@ internal static class Prompt
         return form.ShowDialog(owner) == DialogResult.OK ? input.Text.Trim() : "";
     }
 }
+
 
 
 
