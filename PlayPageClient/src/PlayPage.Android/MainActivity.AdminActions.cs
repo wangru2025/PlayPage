@@ -49,30 +49,11 @@ public sealed partial class MainActivity
     {
         var fields = template.ConfigFields.Count == 0
             ? "无"
-            : string.Join("
-", template.ConfigFields.Select(f => $"- {f.Label}（{AndroidTemplateFieldType(f.Type)}{(f.Required ? "，必填" : "，可选")}）"));
+            : string.Join("\n", template.ConfigFields.Select(f => $"- {f.Label}（{AndroidTemplateFieldType(f.Type)}{(f.Required ? "，必填" : "，可选")}）"));
         var collections = template.Collections.Count == 0
             ? "无"
-            : string.Join("
-", template.Collections.Select(c => $"- {c.Name}，{c.Fields.Count} 个字段"));
-        var message = $"{template.Summary}
-
-作者：{template.AuthorName}
-分类：{template.CategoryLabel}
-使用次数：{template.UsageCount}
-需要互动功能：{PlayPageDisplay.YesNo(template.InteractiveRequired)}
-建议开启统计：{PlayPageDisplay.YesNo(template.AnalyticsRecommended)}
-
-详细说明：
-{template.Description}
-
-模板参数：
-{fields}
-
-需要的数据集合：
-{collections}
-
-点“使用模板”后进入创建页面。";
+            : string.Join("\n", template.Collections.Select(c => $"- {c.Name}，{c.Fields.Count} 个字段"));
+        var message = $"{template.Summary}\n\n作者：{template.AuthorName}\n分类：{template.CategoryLabel}\n使用次数：{template.UsageCount}\n需要互动功能：{PlayPageDisplay.YesNo(template.InteractiveRequired)}\n建议开启统计：{PlayPageDisplay.YesNo(template.AnalyticsRecommended)}\n\n详细说明：\n{template.Description}\n\n模板参数：\n{fields}\n\n需要的数据集合：\n{collections}\n\n点“使用模板”后进入创建页面。";
         new AlertDialog.Builder(this)
             .SetTitle(template.Name)
             .SetMessage(message)
