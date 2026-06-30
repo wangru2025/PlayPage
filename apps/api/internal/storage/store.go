@@ -16,6 +16,8 @@ type Store interface {
 	SyncProjectUsernames(ctx context.Context, userID, username string) error
 	CreateOrRefreshAuthCode(ctx context.Context, input domain.AuthCodeRequestInput, code string, expiresAt time.Time) error
 	ConsumeAuthCode(ctx context.Context, input domain.AuthCodeVerifyInput, now time.Time) (domain.User, bool, error)
+	CreateProjectEmailCode(ctx context.Context, projectID, ownerUserID, email, purpose, code string, expiresAt, now time.Time, dailyLimit int) (int, error)
+	ConsumeProjectEmailCode(ctx context.Context, projectID, email, purpose, code string, now time.Time) (bool, error)
 	CreateSession(ctx context.Context, userID, token string, expiresAt time.Time) error
 	DeleteSession(ctx context.Context, token string) error
 	ListAdminUsers(ctx context.Context) ([]domain.AdminUserSummary, error)

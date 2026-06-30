@@ -15,6 +15,21 @@ const interactiveDocUpdateSemanticsSection = `## 更新记录的重要规则
 ` + "```js\nasync function patchRecordData(collectionName, recordId, updates) {\n  const record = await apiFetch(`/collections/${encodeURIComponent(collectionName)}/records/${encodeURIComponent(recordId)}`);\n  const merged = { ...(record.data || {}), ...updates };\n\n  return apiFetch(`/collections/${encodeURIComponent(collectionName)}/records/${encodeURIComponent(recordId)}`, {\n    method: 'PATCH',\n    body: JSON.stringify({ data: merged })\n  });\n}\n\n// 示例：论坛点赞时只改 likes 和 likedBy，但提交前必须保留原帖子的 title/content/board 等字段。\nawait patchRecordData('posts', postId, { likes: nextLikes, likedBy: nextLikedBy });\n```\n\n" + `禁止写法：
 ` + "```js\n// 错误：这会把这条帖子 data 替换成只有 likes 字段，帖子会像被删除一样从板块列表消失。\napiFetch(`/collections/posts/records/${postId}`, {\n  method: 'PATCH',\n  body: JSON.stringify({ data: { likes: nextLikes } })\n});\n```\n\n"
 
+const interactiveDocEmailCodeSection = "## 作品邮箱验证码接口\n" +
+	"如果作品需要登录、注册、重置密码、绑定邮箱等邮箱验证码能力，请使用 PlayPage 官方验证码接口。平台会发送固定格式的验证码邮件，作品不能自定义邮件正文，避免垃圾邮件和钓鱼风险。\n\n" +
+	"账号级每日额度：免费版 20 封/天，轻享版 50 封/天，支持版 100 封/天。这里的额度按作品所有者账号累计，不是按单个作品累计。同一作品、同一邮箱、同一用途 60 秒内只能发送一次。\n\n" +
+	"### 发送验证码\n" +
+	"```js\nawait apiFetch('/auth/email-code/send', {\n  method: 'POST',\n  body: JSON.stringify({\n    email: 'user@example.com',\n    purpose: 'login'\n  })\n});\n```\n\n" +
+	"`purpose` 只能是：`login`、`register`、`reset`、`bind`、`custom`。不传时默认为 `login`。\n\n" +
+	"成功响应通常是 HTTP `202`：\n" +
+	"```json\n{\n  \"ok\": true,\n  \"status\": \"code-sent\",\n  \"message\": \"验证码已发送，请查看邮箱。\",\n  \"email\": \"user@example.com\",\n  \"purpose\": \"login\",\n  \"expiresIn\": 600,\n  \"quota\": {\n    \"used\": 1,\n    \"limit\": 20\n  }\n}\n```\n\n" +
+	"### 验证验证码\n" +
+	"```js\nawait apiFetch('/auth/email-code/verify', {\n  method: 'POST',\n  body: JSON.stringify({\n    email: 'user@example.com',\n    purpose: 'login',\n    code: '123456'\n  })\n});\n```\n\n" +
+	"成功响应：\n" +
+	"```json\n{\n  \"ok\": true,\n  \"verified\": true,\n  \"email\": \"user@example.com\",\n  \"purpose\": \"login\"\n}\n```\n\n" +
+	"兼容路径：`POST /auth/send-code` 和 `POST /auth/verify-code` 也可用，但新代码优先使用 `/auth/email-code/send` 和 `/auth/email-code/verify`。\n\n" +
+	"验证码验证成功后会立即失效。验证失败会返回 HTTP `401`。额度用完或发送过快会返回 HTTP `429`。请把返回的中文 `error` 展示给用户，不要循环重试。\n\n"
+
 func (rt *Router) handleProjectInteractiveDoc(w http.ResponseWriter, r *http.Request, projectID string) {
 	_, project, ok := rt.requireOwnedProject(w, r, projectID)
 	if !ok {
@@ -58,12 +73,17 @@ func buildInteractiveAPIDoc(project domain.Project, projectKey string, collectio
 func addInteractiveDocUpdateSemantics(doc string) string {
 	doc = strings.ReplaceAll(doc,
 		"- 新增或更新记录时，业务数据统一放进 `data` 对象里。",
-		"- 新增或更新记录时，业务数据统一放进 `data` 对象里。\n- 重要：`PATCH` 更新记录会替换整份 `data` 对象，不会自动合并字段；局部更新必须先读取原记录、合并字段，再提交完整 `data`。",
+		"- 新增或更新记录时，业务数据统一放进 `data` 对象里。\n- 重要：`PATCH` 更新记录会替换整份 `data` 对象，不会自动合并字段；局部更新必须先读取原记录、合并字段，再提交完整 `data`。\n- 如果作品需要邮箱验证码，请使用“作品邮箱验证码接口”；不要自己假设其它邮件接口，也不要在前端伪造验证码。",
 	)
 	doc = strings.ReplaceAll(doc,
 		"- 更新记录：`PATCH /api/v1/public/projects/{{PROJECT_ID}}/collections/{collectionName}/records/{recordId}`",
 		"- 更新记录：`PATCH /api/v1/public/projects/{{PROJECT_ID}}/collections/{collectionName}/records/{recordId}`（替换整份 `data`，不是字段合并）",
 	)
+	doc = strings.ReplaceAll(doc,
+		"- 删除记录：`DELETE /api/v1/public/projects/{{PROJECT_ID}}/collections/{collectionName}/records/{recordId}`",
+		"- 删除记录：`DELETE /api/v1/public/projects/{{PROJECT_ID}}/collections/{collectionName}/records/{recordId}`\n- 发送作品邮箱验证码：`POST /api/v1/public/projects/{{PROJECT_ID}}/auth/email-code/send`\n- 验证作品邮箱验证码：`POST /api/v1/public/projects/{{PROJECT_ID}}/auth/email-code/verify`\n  - 兼容路径：`POST /auth/send-code` 和 `POST /auth/verify-code` 也可用，但新代码优先使用 `/auth/email-code/send` 和 `/auth/email-code/verify`。",
+	)
+	doc = strings.Replace(doc, "## 错误码和错误响应示例", interactiveDocEmailCodeSection+"## 错误码和错误响应示例", 1)
 	return strings.Replace(doc, "## 创建数据表示例", interactiveDocUpdateSemanticsSection+"## 创建数据表示例", 1)
 }
 

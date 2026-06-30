@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -43,6 +44,14 @@ func (rt *Router) handlePublicProjectRoutes(w http.ResponseWriter, r *http.Reque
 		rt.handlePublicListCollections(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "collections" && r.Method == http.MethodPost:
 		rt.handlePublicCreateCollection(w, r, projectID)
+	case len(parts) == 3 && parts[1] == "auth" && (parts[2] == "email-code" || parts[2] == "send-code") && r.Method == http.MethodPost:
+		rt.handlePublicSendEmailCode(w, r, projectID)
+	case len(parts) == 4 && parts[1] == "auth" && parts[2] == "email-code" && parts[3] == "send" && r.Method == http.MethodPost:
+		rt.handlePublicSendEmailCode(w, r, projectID)
+	case len(parts) == 3 && parts[1] == "auth" && parts[2] == "verify-code" && r.Method == http.MethodPost:
+		rt.handlePublicVerifyEmailCode(w, r, projectID)
+	case len(parts) == 4 && parts[1] == "auth" && parts[2] == "email-code" && parts[3] == "verify" && r.Method == http.MethodPost:
+		rt.handlePublicVerifyEmailCode(w, r, projectID)
 	case len(parts) == 3 && parts[1] == "collections" && r.Method == http.MethodGet:
 		rt.handlePublicGetCollection(w, r, projectID, parts[2])
 	case len(parts) == 3 && parts[1] == "collections" && r.Method == http.MethodDelete:
@@ -78,6 +87,146 @@ func (rt *Router) handlePublicProjectInfo(w http.ResponseWriter, r *http.Request
 			"publicUrl":   access.Project.PublicURL,
 		},
 	})
+}
+
+func (rt *Router) handlePublicSendEmailCode(w http.ResponseWriter, r *http.Request, projectID string) {
+	access, ok := rt.requireProjectKey(w, r, projectID)
+	if !ok {
+		return
+	}
+	if !access.Project.Interactive {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个作品没有启用互动功能"})
+		return
+	}
+
+	var input domain.ProjectEmailCodeSendInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容格式不正确"})
+		return
+	}
+	email := normalizeProjectEmail(input.Email)
+	purpose := normalizeProjectEmailPurpose(input.Purpose)
+	if email == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请先填写邮箱"})
+		return
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "邮箱地址格式不对"})
+		return
+	}
+	if purpose == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "验证码用途不正确"})
+		return
+	}
+
+	code, err := generateDigits(6)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "生成验证码失败"})
+		return
+	}
+	now := time.Now().UTC()
+	limit := domain.DailyEmailCodeLimit(access.OwnerPlan, access.OwnerRole)
+	used, err := rt.store.CreateProjectEmailCode(r.Context(), access.Project.ID, access.OwnerUserID, email, purpose, code, now.Add(10*time.Minute), now, limit)
+	if err != nil {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := rt.mailer.SendProjectCode(email, access.Project.Name, projectEmailPurposeLabel(purpose), code); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "发送验证邮件失败"})
+		return
+	}
+
+	response := map[string]any{
+		"ok":        true,
+		"status":    "code-sent",
+		"message":   "验证码已发送，请查看邮箱。",
+		"email":     email,
+		"purpose":   purpose,
+		"expiresIn": 600,
+		"quota": map[string]any{
+			"used":  used,
+			"limit": limit,
+		},
+	}
+	if rt.mailer.IsNoop() {
+		response["devCode"] = code
+	}
+	writeJSON(w, http.StatusAccepted, response)
+}
+
+func (rt *Router) handlePublicVerifyEmailCode(w http.ResponseWriter, r *http.Request, projectID string) {
+	access, ok := rt.requireProjectKey(w, r, projectID)
+	if !ok {
+		return
+	}
+	if !access.Project.Interactive {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个作品没有启用互动功能"})
+		return
+	}
+
+	var input domain.ProjectEmailCodeVerifyInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容格式不正确"})
+		return
+	}
+	email := normalizeProjectEmail(input.Email)
+	purpose := normalizeProjectEmailPurpose(input.Purpose)
+	code := strings.TrimSpace(input.Code)
+	if email == "" || code == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "邮箱和验证码都要填"})
+		return
+	}
+	if purpose == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "验证码用途不正确"})
+		return
+	}
+
+	verified, err := rt.store.ConsumeProjectEmailCode(r.Context(), access.Project.ID, email, purpose, code, time.Now().UTC())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "校验验证码失败"})
+		return
+	}
+	if !verified {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "验证码不对，或者已经过期"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"verified": true,
+		"email":    email,
+		"purpose":  purpose,
+	})
+}
+
+func normalizeProjectEmail(email string) string {
+	return strings.TrimSpace(strings.ToLower(email))
+}
+
+func normalizeProjectEmailPurpose(purpose string) string {
+	purpose = strings.TrimSpace(strings.ToLower(purpose))
+	switch purpose {
+	case "", "login":
+		return "login"
+	case "register", "reset", "bind", "custom":
+		return purpose
+	default:
+		return ""
+	}
+}
+
+func projectEmailPurposeLabel(purpose string) string {
+	switch purpose {
+	case "register":
+		return "注册"
+	case "reset":
+		return "重置密码"
+	case "bind":
+		return "绑定或更换邮箱"
+	case "custom":
+		return "邮箱验证"
+	default:
+		return "登录"
+	}
 }
 
 func (rt *Router) handlePublicListCollections(w http.ResponseWriter, r *http.Request, projectID string) {

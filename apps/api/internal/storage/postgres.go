@@ -184,6 +184,86 @@ func (s *PostgresStore) ConsumeAuthCode(ctx context.Context, input domain.AuthCo
 	return user, true, nil
 }
 
+func (s *PostgresStore) CreateProjectEmailCode(ctx context.Context, projectID, ownerUserID, email, purpose, code string, expiresAt, now time.Time, dailyLimit int) (int, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	var recentID string
+	err = tx.QueryRow(ctx, `
+		select id::text
+		from project_email_codes
+		where project_id::text = $1 and email = $2 and purpose = $3 and created_at > $4
+		order by created_at desc
+		limit 1
+	`, projectID, email, purpose, now.Add(-60*time.Second)).Scan(&recentID)
+	if err == nil {
+		return 0, fmt.Errorf("同一个邮箱 60 秒内只能发送一次验证码")
+	}
+	if err != pgx.ErrNoRows {
+		return 0, err
+	}
+
+	day := now.Format("2006-01-02")
+	var sentCount int
+	err = tx.QueryRow(ctx, `
+		insert into project_email_quota_daily (owner_user_id, day, sent_count)
+		values ($1::uuid, $2::date, 1)
+		on conflict (owner_user_id, day)
+		do update set sent_count = project_email_quota_daily.sent_count + 1
+		returning sent_count
+	`, ownerUserID, day).Scan(&sentCount)
+	if err != nil {
+		return 0, err
+	}
+	if dailyLimit > 0 && sentCount > dailyLimit {
+		_, _ = tx.Exec(ctx, `
+			update project_email_quota_daily
+			set sent_count = sent_count - 1
+			where owner_user_id::text = $1 and day = $2::date and sent_count > 0
+		`, ownerUserID, day)
+		return sentCount - 1, fmt.Errorf("这个账号今天的作品验证码邮件额度已经用完了")
+	}
+
+	_, err = tx.Exec(ctx, `
+		insert into project_email_codes (project_id, owner_user_id, email, purpose, code, expires_at, created_at)
+		values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
+	`, projectID, ownerUserID, email, purpose, code, expiresAt, now)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return sentCount, nil
+}
+
+func (s *PostgresStore) ConsumeProjectEmailCode(ctx context.Context, projectID, email, purpose, code string, now time.Time) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		update project_email_codes
+		set consumed_at = $6
+		where id = (
+			select id
+			from project_email_codes
+			where project_id::text = $1
+			  and email = $2
+			  and purpose = $3
+			  and code = $4
+			  and consumed_at is null
+			  and expires_at > $5
+			order by created_at desc
+			limit 1
+		)
+	`, projectID, email, purpose, code, now, now)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 func (s *PostgresStore) CreateSession(ctx context.Context, userID, token string, expiresAt time.Time) error {
 	_, err := s.pool.Exec(ctx, `
 		insert into sessions (user_id, token, expires_at)

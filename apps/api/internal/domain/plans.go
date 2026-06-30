@@ -82,3 +82,17 @@ func IsAdminRole(role string) bool {
 func IsSuperAdminRole(role string) bool {
 	return role == RoleSuperAdmin
 }
+
+func DailyEmailCodeLimit(planCode string, role string) int {
+	if IsAdminRole(role) {
+		return 10000
+	}
+	switch planCode {
+	case PlanSupport:
+		return 100
+	case PlanLight:
+		return 50
+	default:
+		return 20
+	}
+}

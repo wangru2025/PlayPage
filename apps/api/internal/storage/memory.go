@@ -20,6 +20,17 @@ type memoryAuthCode struct {
 	Used      bool
 }
 
+type memoryProjectEmailCode struct {
+	ProjectID   string
+	OwnerUserID string
+	Email       string
+	Purpose     string
+	Code        string
+	ExpiresAt   time.Time
+	CreatedAt   time.Time
+	Used        bool
+}
+
 type memorySession struct {
 	UserID    string
 	Token     string
@@ -32,6 +43,8 @@ type MemoryStore struct {
 	users                       map[string]domain.User
 	usersByMail                 map[string]string
 	authCodes                   map[string]memoryAuthCode
+	projectEmailCodes           []memoryProjectEmailCode
+	projectEmailQuotaDaily      map[string]int
 	sessions                    map[string]memorySession
 	projects                    map[string]domain.Project
 	projectUser                 map[string]string
@@ -57,6 +70,8 @@ func NewMemoryStore(publicBase string) *MemoryStore {
 		users:                       map[string]domain.User{},
 		usersByMail:                 map[string]string{},
 		authCodes:                   map[string]memoryAuthCode{},
+		projectEmailCodes:           []memoryProjectEmailCode{},
+		projectEmailQuotaDaily:      map[string]int{},
 		sessions:                    map[string]memorySession{},
 		projects:                    map[string]domain.Project{},
 		projectUser:                 map[string]string{},
@@ -188,6 +203,47 @@ func (s *MemoryStore) ConsumeAuthCode(_ context.Context, input domain.AuthCodeVe
 	s.users[user.ID] = user
 	s.usersByMail[user.Email] = user.ID
 	return user, true, nil
+}
+
+func (s *MemoryStore) CreateProjectEmailCode(_ context.Context, projectID, ownerUserID, email, purpose, code string, expiresAt, now time.Time, dailyLimit int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, item := range s.projectEmailCodes {
+		if item.ProjectID == projectID && item.Email == email && item.Purpose == purpose && item.CreatedAt.After(now.Add(-60*time.Second)) {
+			return 0, fmt.Errorf("同一个邮箱 60 秒内只能发送一次验证码")
+		}
+	}
+	day := now.Format("2006-01-02")
+	key := ownerUserID + ":" + day
+	used := s.projectEmailQuotaDaily[key]
+	if dailyLimit > 0 && used >= dailyLimit {
+		return used, fmt.Errorf("这个账号今天的作品验证码邮件额度已经用完了")
+	}
+	used++
+	s.projectEmailQuotaDaily[key] = used
+	s.projectEmailCodes = append(s.projectEmailCodes, memoryProjectEmailCode{
+		ProjectID:   projectID,
+		OwnerUserID: ownerUserID,
+		Email:       email,
+		Purpose:     purpose,
+		Code:        code,
+		ExpiresAt:   expiresAt,
+		CreatedAt:   now,
+	})
+	return used, nil
+}
+
+func (s *MemoryStore) ConsumeProjectEmailCode(_ context.Context, projectID, email, purpose, code string, now time.Time) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := len(s.projectEmailCodes) - 1; i >= 0; i-- {
+		item := s.projectEmailCodes[i]
+		if item.ProjectID == projectID && item.Email == email && item.Purpose == purpose && item.Code == code && !item.Used && item.ExpiresAt.After(now) {
+			s.projectEmailCodes[i].Used = true
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *MemoryStore) CreateSession(_ context.Context, userID, token string, expiresAt time.Time) error {

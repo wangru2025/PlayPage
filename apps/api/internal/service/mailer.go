@@ -39,6 +39,18 @@ func (m *Mailer) SendCode(to, code string) error {
 	return m.SendText(to, "PlayPage 登录验证码", fmt.Sprintf("你的 PlayPage 登录验证码是 %s，10 分钟内有效。", code))
 }
 
+func (m *Mailer) SendProjectCode(to, projectName, purposeLabel, code string) error {
+	if strings.TrimSpace(projectName) == "" {
+		projectName = "未命名作品"
+	}
+	if strings.TrimSpace(purposeLabel) == "" {
+		purposeLabel = "验证邮箱"
+	}
+	subject := "PlayPage 作品验证码"
+	body := fmt.Sprintf("你正在使用 PlayPage 作品「%s」的%s功能。\n\n验证码：%s\n\n验证码 10 分钟内有效。为了保护你的账号安全，请不要把验证码告诉他人。\n\n本邮件由 PlayPage 代作品发送。如果不是你本人操作，请忽略。", projectName, purposeLabel, code)
+	return m.SendText(to, subject, body)
+}
+
 func (m *Mailer) SendText(to, subject, body string) error {
 	to = strings.TrimSpace(to)
 	start := time.Now()

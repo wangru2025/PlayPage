@@ -125,6 +125,17 @@ type UserProfileUpdateInput struct {
 	Username string `json:"username"`
 }
 
+type ProjectEmailCodeSendInput struct {
+	Email   string `json:"email"`
+	Purpose string `json:"purpose"`
+}
+
+type ProjectEmailCodeVerifyInput struct {
+	Email   string `json:"email"`
+	Purpose string `json:"purpose"`
+	Code    string `json:"code"`
+}
+
 type AdminUserSummary struct {
 	ID           string    `json:"id"`
 	Email        string    `json:"email"`
