@@ -36,13 +36,63 @@ public sealed partial class MainActivity
                 try
                 {
                     var detail = await _client.GetTemplateAsync(templates[args.Which].Id);
-                    await PromptCreateFromTemplateAsync(detail);
+                    ShowTemplateDetail(detail);
                 }
                 catch (System.Exception ex) { ShowError(ex); }
             })
             .SetNegativeButton("关闭", (_, _) => { })
             .Show();
     }
+
+
+    private void ShowTemplateDetail(TemplateInfo template)
+    {
+        var fields = template.ConfigFields.Count == 0
+            ? "无"
+            : string.Join("
+", template.ConfigFields.Select(f => $"- {f.Label}（{AndroidTemplateFieldType(f.Type)}{(f.Required ? "，必填" : "，可选")}）"));
+        var collections = template.Collections.Count == 0
+            ? "无"
+            : string.Join("
+", template.Collections.Select(c => $"- {c.Name}，{c.Fields.Count} 个字段"));
+        var message = $"{template.Summary}
+
+作者：{template.AuthorName}
+分类：{template.CategoryLabel}
+使用次数：{template.UsageCount}
+需要互动功能：{PlayPageDisplay.YesNo(template.InteractiveRequired)}
+建议开启统计：{PlayPageDisplay.YesNo(template.AnalyticsRecommended)}
+
+详细说明：
+{template.Description}
+
+模板参数：
+{fields}
+
+需要的数据集合：
+{collections}
+
+点“使用模板”后进入创建页面。";
+        new AlertDialog.Builder(this)
+            .SetTitle(template.Name)
+            .SetMessage(message)
+            .SetPositiveButton("使用模板", async (_, _) =>
+            {
+                try { await PromptCreateFromTemplateAsync(template); }
+                catch (System.Exception ex) { ShowError(ex); }
+            })
+            .SetNegativeButton("返回模板市场", (_, _) => { })
+            .Show();
+    }
+
+    private static string AndroidTemplateFieldType(string type) => type switch
+    {
+        "color" => "颜色",
+        "select" => "下拉选择",
+        "text" => "多行文本",
+        "number" => "数字",
+        _ => "文本"
+    };
 
     private System.Threading.Tasks.Task<bool> PromptCreateFromTemplateAsync(TemplateInfo template)
     {

@@ -20,9 +20,17 @@ public sealed partial class MainForm
             MessageBox.Show(this, "暂无模板。", "模板市场");
             return;
         }
-        using var form = new TemplateMarketForm(items);
-        if (form.ShowDialog(this) != DialogResult.OK || form.Result == null) return;
-        var input = form.Result;
+        using var market = new TemplateMarketForm(items);
+        if (market.ShowDialog(this) != DialogResult.OK || market.SelectedTemplate == null) return;
+        var template = await _client.GetTemplateAsync(market.SelectedTemplate.Id);
+
+        using var detail = new TemplateDetailForm(template);
+        if (detail.ShowDialog(this) != DialogResult.OK || !detail.UseTemplate) return;
+
+        using var create = new TemplateCreateProjectForm(template);
+        if (create.ShowDialog(this) != DialogResult.OK || create.Result == null) return;
+        var input = create.Result;
+
         SetStatus("正在创建模板作品。", false);
         var project = await _client.CreateProjectAsync(new ProjectCreateRequest
         {
