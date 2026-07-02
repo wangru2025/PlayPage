@@ -11,7 +11,7 @@ type TemplateListResponse = {
 
 const text = {
   title: "模板市场",
-  intro: "先把模板选择流程搭起来。后续这里可以放论坛、个人主页、小游戏、工具页等模板。",
+  intro: "从模板快速创建作品。你可以选择个人主页、留言板、论坛、排行榜、反馈页等模板，也可以投稿自己的模板。",
   submit: "投稿模板",
   search: "搜索模板",
   searchPlaceholder: "输入模板名称、标签或用途",
