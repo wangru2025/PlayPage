@@ -92,6 +92,30 @@ type ProjectSettingsUpdateInput struct {
 	AnalyticsEnabled bool   `json:"analyticsEnabled"`
 }
 
+type ContestSubmission struct {
+	ID            string    `json:"id"`
+	UserID        string    `json:"userId"`
+	UserEmail     string    `json:"userEmail,omitempty"`
+	Username      string    `json:"username"`
+	ProjectID     string    `json:"projectId"`
+	ProjectName   string    `json:"projectName"`
+	ProjectURL    string    `json:"projectUrl"`
+	Track         string    `json:"track"`
+	Intro         string    `json:"intro"`
+	Story         string    `json:"story"`
+	AllowShowcase bool      `json:"allowShowcase"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
+type ContestSubmissionCreateInput struct {
+	Track         string `json:"track"`
+	Intro         string `json:"intro"`
+	Story         string `json:"story"`
+	AllowShowcase bool   `json:"allowShowcase"`
+}
+
 type CollectionCreateInput struct {
 	Name        string        `json:"name"`
 	Permissions PermissionSet `json:"permissions"`

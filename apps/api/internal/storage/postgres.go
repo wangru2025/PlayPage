@@ -489,6 +489,67 @@ func (s *PostgresStore) GetProjectPublicAccess(ctx context.Context, projectID st
 	return access, true, nil
 }
 
+func (s *PostgresStore) CreateContestSubmission(ctx context.Context, input domain.ContestSubmission) (domain.ContestSubmission, error) {
+	var item domain.ContestSubmission
+	err := s.pool.QueryRow(ctx, `
+		insert into contest_submissions (
+			user_id, user_email, username, project_id, project_name, project_url,
+			track, intro, story, allow_showcase, status
+		) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending')
+		returning id::text, user_id::text, user_email, username, project_id::text, project_name, project_url,
+			track, intro, story, allow_showcase, status, created_at, updated_at
+	`, input.UserID, input.UserEmail, input.Username, input.ProjectID, input.ProjectName, input.ProjectURL,
+		input.Track, input.Intro, input.Story, input.AllowShowcase).Scan(
+		&item.ID,
+		&item.UserID,
+		&item.UserEmail,
+		&item.Username,
+		&item.ProjectID,
+		&item.ProjectName,
+		&item.ProjectURL,
+		&item.Track,
+		&item.Intro,
+		&item.Story,
+		&item.AllowShowcase,
+		&item.Status,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	return item, err
+}
+
+func (s *PostgresStore) GetContestSubmissionByUserProject(ctx context.Context, userID, projectID string) (domain.ContestSubmission, bool, error) {
+	var item domain.ContestSubmission
+	err := s.pool.QueryRow(ctx, `
+		select id::text, user_id::text, user_email, username, project_id::text, project_name, project_url,
+			track, intro, story, allow_showcase, status, created_at, updated_at
+		from contest_submissions
+		where user_id=$1 and project_id=$2
+	`, userID, projectID).Scan(
+		&item.ID,
+		&item.UserID,
+		&item.UserEmail,
+		&item.Username,
+		&item.ProjectID,
+		&item.ProjectName,
+		&item.ProjectURL,
+		&item.Track,
+		&item.Intro,
+		&item.Story,
+		&item.AllowShowcase,
+		&item.Status,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.ContestSubmission{}, false, nil
+		}
+		return domain.ContestSubmission{}, false, err
+	}
+	return item, true, nil
+}
+
 func (s *PostgresStore) UpdateProjectVisibility(ctx context.Context, userID, projectID, visibility string) (domain.Project, bool, error) {
 	var project domain.Project
 	err := s.pool.QueryRow(ctx, `

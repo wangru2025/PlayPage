@@ -57,6 +57,7 @@ type MemoryStore struct {
 	upgradeRequests             map[string]domain.UpgradeRequest
 	projectDomains              map[string]domain.ProjectDomain
 	projectDomainDeleteRequests map[string]domain.ProjectDomainDeleteRequest
+	contestSubmissions          map[string]domain.ContestSubmission
 	repairRequests              map[string]domain.RepairRequest
 	repairAIJobs                map[string]domain.RepairAIJob
 	repairAIMessages            map[string][]domain.RepairAIMessage
@@ -84,6 +85,7 @@ func NewMemoryStore(publicBase string) *MemoryStore {
 		upgradeRequests:             map[string]domain.UpgradeRequest{},
 		projectDomains:              map[string]domain.ProjectDomain{},
 		projectDomainDeleteRequests: map[string]domain.ProjectDomainDeleteRequest{},
+		contestSubmissions:          map[string]domain.ContestSubmission{},
 		repairRequests:              map[string]domain.RepairRequest{},
 		repairAIJobs:                map[string]domain.RepairAIJob{},
 		repairAIMessages:            map[string][]domain.RepairAIMessage{},
@@ -410,6 +412,34 @@ func (s *MemoryStore) GetProjectPublicAccess(_ context.Context, projectID string
 		OwnerRole:   s.users[s.projectUser[projectID]].Role,
 		OwnerPlan:   s.users[s.projectUser[projectID]].PlanCode,
 	}, true, nil
+}
+
+func (s *MemoryStore) CreateContestSubmission(_ context.Context, input domain.ContestSubmission) (domain.ContestSubmission, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, item := range s.contestSubmissions {
+		if item.UserID == input.UserID && item.ProjectID == input.ProjectID {
+			return domain.ContestSubmission{}, fmt.Errorf("这个作品已经提交过比赛")
+		}
+	}
+	now := time.Now().UTC()
+	input.ID = fmt.Sprintf("contest_%d", now.UnixNano())
+	input.Status = "pending"
+	input.CreatedAt = now
+	input.UpdatedAt = now
+	s.contestSubmissions[input.ID] = input
+	return input, nil
+}
+
+func (s *MemoryStore) GetContestSubmissionByUserProject(_ context.Context, userID, projectID string) (domain.ContestSubmission, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, item := range s.contestSubmissions {
+		if item.UserID == userID && item.ProjectID == projectID {
+			return item, true, nil
+		}
+	}
+	return domain.ContestSubmission{}, false, nil
 }
 
 func (s *MemoryStore) UpdateProjectVisibility(_ context.Context, userID, projectID, visibility string) (domain.Project, bool, error) {

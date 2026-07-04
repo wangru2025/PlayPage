@@ -1,0 +1,55 @@
+const tracks = [
+  ["最有创意奖", "脑洞、整活、奇怪但有趣的网页。"],
+  ["最好玩奖", "小游戏、点击器、经营、答题、解谜等。"],
+  ["最实用奖", "工具、学习辅助、音频/文本处理等。"],
+  ["最佳互动作品奖", "使用留言、论坛、排行榜、云存档等互动功能。"],
+  ["新人潜力奖", "不要求成熟，重点看想法和继续创作的潜力。"]
+];
+
+export default function ContestPage() {
+  return (
+    <section style={{ display: "grid", gap: 18 }}>
+      <header className="panel" style={{ padding: 32, display: "grid", gap: 14 }}>
+        <p style={{ margin: 0, color: "var(--muted)" }}>PlayPage 作品创作比赛</p>
+        <h1 style={{ margin: 0, fontSize: "2.6rem" }}>把你的脑洞变成一个能打开的网址</h1>
+        <p style={{ margin: 0, color: "var(--muted)", maxWidth: 860 }}>
+          不要求你写出世界级网站，只要求你把想法做成能打开、能体验、能分享的 PlayPage 作品。AI 辅助、自写代码、从模板创建都可以。
+        </p>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <a className="button-primary" href="/projects">去我的作品提交参赛</a>
+          <a className="button-secondary" href="/templates">先逛模板市场</a>
+        </div>
+      </header>
+
+      <section className="panel" style={{ padding: 24, display: "grid", gap: 12 }}>
+        <h2 style={{ margin: 0 }}>参赛规则</h2>
+        <ul style={{ margin: 0, paddingLeft: 22, lineHeight: 1.8 }}>
+          <li>作品必须托管在 PlayPage，并且能正常打开。</li>
+          <li>可以使用 AI 生成，也可以自己写代码或从模板创建。</li>
+          <li>每个账号可以提交多个作品，但同一个作品只能提交一次。</li>
+          <li>禁止违法违规、恶意代码、诈骗、色情、严重侵权内容。</li>
+          <li>访问量只作为参考，不直接决定排名。</li>
+        </ul>
+      </section>
+
+      <section className="panel" style={{ padding: 24, display: "grid", gap: 16 }}>
+        <h2 style={{ margin: 0 }}>奖项赛道</h2>
+        <div className="card-grid">
+          {tracks.map(([name, desc]) => (
+            <article key={name} style={{ border: "1px solid var(--line)", borderRadius: 18, padding: 18 }}>
+              <h3 style={{ margin: 0 }}>{name}</h3>
+              <p style={{ margin: "8px 0 0", color: "var(--muted)" }}>{desc}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel" style={{ padding: 24, display: "grid", gap: 12 }}>
+        <h2 style={{ margin: 0 }}>评审维度</h2>
+        <p style={{ margin: 0, color: "var(--muted)" }}>
+          创意、完成度、体验、PlayPage 互动能力使用、分享传播都会参考。我们会优先鼓励真正有想法、愿意继续完善的作品。
+        </p>
+      </section>
+    </section>
+  );
+}

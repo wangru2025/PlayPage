@@ -151,6 +151,10 @@ func (rt *Router) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 		rt.handleProjectStats(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "data-export" && r.Method == http.MethodPost:
 		rt.handleExportProjectData(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "contest-submission" && r.Method == http.MethodGet:
+		rt.handleGetProjectContestSubmission(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "contest-submission" && r.Method == http.MethodPost:
+		rt.handleCreateContestSubmission(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "collections" && r.Method == http.MethodGet:
 		rt.handleListCollections(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "collections" && r.Method == http.MethodPost:

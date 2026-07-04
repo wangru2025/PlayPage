@@ -96,14 +96,15 @@ const text = {
   domainActive: "已通过",
   domainRejected: "已驳回",
   domainLoadingFail: "读取独立网址申请失败。",
-  repairBannerTitle: "AI 网页急救站活动",
-  repairBannerText: "AI 写坏了、页面白屏、按钮没反应、互动功能报错？可以提交修复申请，PlayPage 会尽量帮你看看。",
-  repairBannerLink: "查看活动说明",
+  contestBannerTitle: "PlayPage 作品创作比赛",
+  contestBannerText: "把你的脑洞变成一个能打开的网址。小游戏、工具、论坛、整活网页都可以参加。",
+  contestBannerLink: "查看比赛说明",
   moreActions: "更多操作",
   collapseActions: "收起操作",
   actionsFor: "的更多操作",
   requestRepair: "申请修复",
-  viewRepairRequests: "查看修复申请"
+  viewRepairRequests: "查看修复申请",
+  joinContest: "参加创作比赛"
 };
 
 export function ProjectWorkshop() {
@@ -273,12 +274,12 @@ export function ProjectWorkshop() {
         </div>
       </header>
 
-      <section className="panel" style={{ padding: 22, display: "flex", gap: 16, flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", background: "linear-gradient(135deg, rgba(214,101,47,0.12), rgba(255,255,255,0.86))" }}>
+      <section className="panel" style={{ padding: 22, display: "flex", gap: 16, flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", background: "linear-gradient(135deg, rgba(124,58,237,0.13), rgba(255,255,255,0.9))" }}>
         <div style={{ display: "grid", gap: 6 }}>
-          <h2 style={{ margin: 0, fontSize: "1.35rem" }}>{text.repairBannerTitle}</h2>
-          <p style={{ margin: 0, color: "var(--muted)", maxWidth: 760 }}>{text.repairBannerText}</p>
+          <h2 style={{ margin: 0, fontSize: "1.35rem" }}>{text.contestBannerTitle}</h2>
+          <p style={{ margin: 0, color: "var(--muted)", maxWidth: 760 }}>{text.contestBannerText}</p>
         </div>
-        <a className="button-primary" href="/projects/repair">{text.repairBannerLink}</a>
+        <a className="button-primary" href="/contest">{text.contestBannerLink}</a>
       </section>
 
       {!user ? (
@@ -413,6 +414,9 @@ export function ProjectWorkshop() {
                   </a>
                   <a className="button-secondary" href={`/projects/${project.id}/domains`}>
                     {text.domainManage}
+                  </a>
+                  <a className="button-secondary" href={`/contest/submit?projectId=${project.id}`}>
+                    {text.joinContest}
                   </a>
                   <button
                     className="button-ghost"
