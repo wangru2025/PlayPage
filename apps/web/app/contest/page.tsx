@@ -6,6 +6,14 @@ const tracks = [
   ["新人潜力奖", "不要求成熟，重点看想法和继续创作的潜力。"]
 ];
 
+const rewards = [
+  ["最有创意奖", "1～5 人", "获奖徽章、广场精选推荐 7 天、支持者套餐 1 个月。第一名额外获得首页展示位 7 天。"],
+  ["最好玩奖", "1～5 人", "获奖徽章、广场精选推荐 7 天、支持者套餐 1 个月。适合游戏类作品。"],
+  ["最实用奖", "1～5 人", "获奖徽章、广场精选推荐 7 天、支持者套餐 1 个月。适合工具、学习、效率类作品。"],
+  ["最佳互动作品奖", "1～5 人", "获奖徽章、广场精选推荐 7 天、支持者套餐 1 个月，并额外赠送互动用量加油包一次。"],
+  ["新人潜力奖", "1～5 人", "获奖徽章、广场精选推荐 3 天、轻量套餐 1 个月。重点鼓励第一次认真创作的用户。"]
+];
+
 export default function ContestPage() {
   return (
     <section style={{ display: "grid", gap: 18 }}>
@@ -39,6 +47,22 @@ export default function ContestPage() {
             <article key={name} style={{ border: "1px solid var(--line)", borderRadius: 18, padding: 18 }}>
               <h3 style={{ margin: 0 }}>{name}</h3>
               <p style={{ margin: "8px 0 0", color: "var(--muted)" }}>{desc}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel" style={{ padding: 24, display: "grid", gap: 12 }}>
+        <h2 style={{ margin: 0 }}>奖励设计</h2>
+        <p style={{ margin: 0, color: "var(--muted)" }}>
+          每个赛道根据参赛作品数量和质量评选 1～5 人。人少时可以少评，人多且质量好时可以多评。最终名单由管理员统一评定。
+        </p>
+        <div className="card-grid">
+          {rewards.map(([name, count, reward]) => (
+            <article key={name} style={{ border: "1px solid var(--line)", borderRadius: 18, padding: 18 }}>
+              <h3 style={{ margin: 0 }}>{name}</h3>
+              <p style={{ margin: "8px 0 0", color: "var(--muted)" }}>名额：{count}</p>
+              <p style={{ margin: "8px 0 0" }}>{reward}</p>
             </article>
           ))}
         </div>

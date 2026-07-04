@@ -19,18 +19,9 @@ type SubmissionStatusResponse = {
   submission?: { id: string; track: string; status: string };
 };
 
-const tracks = [
-  { value: "creative", label: "最有创意奖" },
-  { value: "fun", label: "最好玩奖" },
-  { value: "useful", label: "最实用奖" },
-  { value: "interactive", label: "最佳互动作品奖" },
-  { value: "newcomer", label: "新人潜力奖" }
-];
-
 export default function ContestSubmitPage() {
   const [projectId, setProjectId] = useState("");
   const [project, setProject] = useState<Project | null>(null);
-  const [track, setTrack] = useState("creative");
   const [intro, setIntro] = useState("");
   const [story, setStory] = useState("");
   const [allowShowcase, setAllowShowcase] = useState(true);
@@ -81,7 +72,6 @@ export default function ContestSubmitPage() {
       setWorking(true);
       setStatus("正在提交参赛作品。", "info");
       await postJSON(`/api/v1/projects/${projectId}/contest-submission`, {
-        track,
         intro,
         story,
         allowShowcase
@@ -116,12 +106,9 @@ export default function ContestSubmitPage() {
             {!project.currentReleaseId ? <p style={{ margin: 0, color: "var(--muted)" }}>这个作品还没有上传网页，不能参赛。</p> : null}
           </div>
 
-          <label className="field">
-            <span>参赛赛道</span>
-            <select value={track} onChange={(event) => setTrack(event.target.value)} disabled={submitted || working}>
-              {tracks.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-          </label>
+          <p className="field-note" style={{ margin: 0 }}>
+            不需要选择赛道。活动结束后，管理员会根据作品特点统一评选“最有创意、最好玩、最实用、最佳互动、新人潜力”等奖项。
+          </p>
 
           <label className="field">
             <span>作品介绍 *</span>

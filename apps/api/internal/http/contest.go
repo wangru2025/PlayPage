@@ -55,11 +55,7 @@ func (rt *Router) handleCreateContestSubmission(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容格式不正确"})
 		return
 	}
-	track := normalizeContestTrack(input.Track)
-	if track == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请选择参赛赛道"})
-		return
-	}
+	track := "all"
 	intro := trimLimit(input.Intro, 600)
 	if intro == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请填写作品介绍"})
@@ -91,14 +87,4 @@ func (rt *Router) handleCreateContestSubmission(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusCreated, item)
-}
-
-func normalizeContestTrack(value string) string {
-	value = strings.TrimSpace(value)
-	switch value {
-	case "creative", "fun", "useful", "interactive", "newcomer":
-		return value
-	default:
-		return ""
-	}
 }
