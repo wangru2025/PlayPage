@@ -30,6 +30,16 @@ export default function ContestPage() {
       </header>
 
       <section className="panel" style={{ padding: 24, display: "grid", gap: 12 }}>
+        <h2 style={{ margin: 0 }}>活动时间</h2>
+        <ul style={{ margin: 0, paddingLeft: 22, lineHeight: 1.8 }}>
+          <li>投稿时间：2026 年 7 月 5 日至 2026 年 7 月 26 日。</li>
+          <li>评选时间：2026 年 7 月 27 日至 2026 年 7 月 31 日。</li>
+          <li>结果公布：预计 2026 年 8 月 1 日公布获奖名单。</li>
+          <li>奖励发放：结果公布后 7 天内陆续发放。</li>
+        </ul>
+      </section>
+
+      <section className="panel" style={{ padding: 24, display: "grid", gap: 12 }}>
         <h2 style={{ margin: 0 }}>参赛规则</h2>
         <ul style={{ margin: 0, paddingLeft: 22, lineHeight: 1.8 }}>
           <li>作品必须托管在 PlayPage，并且能正常打开。</li>
