@@ -79,6 +79,53 @@ func (rt *Router) notifyRepairRequestStatus(item domain.RepairRequest) {
 	}()
 }
 
+func (rt *Router) notifyContestSubmissionReview(item domain.ContestSubmission) {
+	if rt.mailer == nil || strings.TrimSpace(item.UserEmail) == "" {
+		return
+	}
+	status := strings.TrimSpace(item.Status)
+	if status != "shortlisted" && status != "winner" && status != "rejected" {
+		return
+	}
+
+	projectName := strings.TrimSpace(item.ProjectName)
+	if projectName == "" {
+		projectName = "你的作品"
+	}
+	note := strings.TrimSpace(item.AdminNote)
+	var subject string
+	var body string
+	switch status {
+	case "shortlisted":
+		subject = "PlayPage 创作比赛入围通知"
+		body = fmt.Sprintf("你好，\n\n恭喜！你的作品《%s》已入围 PlayPage 作品创作比赛。\n\n", projectName)
+		if note != "" {
+			body += "管理员备注：" + note + "\n\n"
+		}
+		body += "后续评选结果会在活动结束后继续通知。\n\nPlayPage"
+	case "winner":
+		subject = "PlayPage 创作比赛获奖通知"
+		body = fmt.Sprintf("你好，\n\n恭喜！你的作品《%s》已在 PlayPage 作品创作比赛中获奖。\n\n领奖方式和后续安排会另行通知，请留意你的邮箱或平台消息。\n", projectName)
+		if note != "" {
+			body += "\n管理员备注：" + note + "\n"
+		}
+		body += "\nPlayPage"
+	case "rejected":
+		subject = "PlayPage 创作比赛评选结果通知"
+		body = fmt.Sprintf("你好，\n\n你的作品《%s》本次没有入选 PlayPage 作品创作比赛。\n", projectName)
+		if note != "" {
+			body += "\n原因说明：" + note + "\n"
+		}
+		body += "\n这不影响作品继续在 PlayPage 发布和分享，也欢迎你后续继续投稿新作品。\n\nPlayPage"
+	}
+
+	go func() {
+		if err := rt.mailer.SendText(item.UserEmail, subject, body); err != nil {
+			log.Printf("send contest submission review mail failed: submission_id=%s err=%v", item.ID, err)
+		}
+	}()
+}
+
 func projectDomainStatusText(status string) string {
 	switch status {
 	case "active":

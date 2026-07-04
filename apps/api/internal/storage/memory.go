@@ -442,6 +442,35 @@ func (s *MemoryStore) GetContestSubmissionByUserProject(_ context.Context, userI
 	return domain.ContestSubmission{}, false, nil
 }
 
+func (s *MemoryStore) ListAdminContestSubmissions(_ context.Context, status string) ([]domain.ContestSubmission, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.ContestSubmission{}
+	for _, item := range s.contestSubmissions {
+		if status == "" || item.Status == status {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) UpdateContestSubmissionReview(_ context.Context, submissionID, status, adminNote, reviewedBy string) (domain.ContestSubmission, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.contestSubmissions[submissionID]
+	if !ok {
+		return domain.ContestSubmission{}, fmt.Errorf("找不到这个参赛作品")
+	}
+	item.Status = status
+	item.AdminNote = adminNote
+	item.ReviewedBy = reviewedBy
+	item.ReviewedAt = time.Now().UTC()
+	item.UpdatedAt = item.ReviewedAt
+	s.contestSubmissions[submissionID] = item
+	return item, nil
+}
+
 func (s *MemoryStore) UpdateProjectVisibility(_ context.Context, userID, projectID, visibility string) (domain.Project, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

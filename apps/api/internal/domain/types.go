@@ -105,6 +105,9 @@ type ContestSubmission struct {
 	Story         string    `json:"story"`
 	AllowShowcase bool      `json:"allowShowcase"`
 	Status        string    `json:"status"`
+	AdminNote     string    `json:"adminNote"`
+	ReviewedBy    string    `json:"reviewedBy"`
+	ReviewedAt    time.Time `json:"reviewedAt"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
 }
@@ -114,6 +117,11 @@ type ContestSubmissionCreateInput struct {
 	Intro         string `json:"intro"`
 	Story         string `json:"story"`
 	AllowShowcase bool   `json:"allowShowcase"`
+}
+
+type ContestSubmissionReviewInput struct {
+	Status    string `json:"status"`
+	AdminNote string `json:"adminNote"`
 }
 
 type CollectionCreateInput struct {

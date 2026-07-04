@@ -74,6 +74,8 @@ func NewRouter(cfg config.Config) http.Handler {
 	mux.HandleFunc("/api/v1/admin/project-domain-delete-requests/", router.handleAdminProjectDomainDeleteRequestRoutes)
 	mux.HandleFunc("GET /api/v1/admin/repair-requests", router.handleAdminListRepairRequests)
 	mux.HandleFunc("/api/v1/admin/repair-requests/", router.handleAdminRepairRequestRoutes)
+	mux.HandleFunc("GET /api/v1/admin/contest-submissions", router.handleAdminListContestSubmissions)
+	mux.HandleFunc("/api/v1/admin/contest-submissions/", router.handleAdminContestSubmissionRoutes)
 	mux.HandleFunc("GET /api/v1/admin/template-submissions", router.handleAdminListTemplateSubmissions)
 	mux.HandleFunc("/api/v1/admin/template-submissions/", router.handleAdminTemplateSubmissionRoutes)
 	mux.HandleFunc("/api/v1/domain-site/", router.handleProjectDomainSite)

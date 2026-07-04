@@ -30,6 +30,8 @@ type Store interface {
 	GetProjectPublicAccess(ctx context.Context, projectID string) (domain.PublicProjectAccess, bool, error)
 	CreateContestSubmission(ctx context.Context, input domain.ContestSubmission) (domain.ContestSubmission, error)
 	GetContestSubmissionByUserProject(ctx context.Context, userID, projectID string) (domain.ContestSubmission, bool, error)
+	ListAdminContestSubmissions(ctx context.Context, status string) ([]domain.ContestSubmission, error)
+	UpdateContestSubmissionReview(ctx context.Context, submissionID, status, adminNote, reviewedBy string) (domain.ContestSubmission, error)
 	UpdateProjectVisibility(ctx context.Context, userID, projectID, visibility string) (domain.Project, bool, error)
 	UpdateProjectPath(ctx context.Context, userID, projectID, slug string) (domain.Project, bool, error)
 	UpdateProjectSettings(ctx context.Context, userID, projectID string, input domain.ProjectSettingsUpdateInput) (domain.Project, bool, error)

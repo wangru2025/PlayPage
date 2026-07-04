@@ -88,3 +88,49 @@ func (rt *Router) handleCreateContestSubmission(w http.ResponseWriter, r *http.R
 	}
 	writeJSON(w, http.StatusCreated, item)
 }
+
+func (rt *Router) handleAdminListContestSubmissions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := rt.requireAdminUser(w, r); !ok {
+		return
+	}
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	items, err := rt.store.ListAdminContestSubmissions(r.Context(), status)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取参赛作品失败"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (rt *Router) handleAdminContestSubmissionRoutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/admin/contest-submissions/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "review" || r.Method != http.MethodPost {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "没有找到这个接口"})
+		return
+	}
+	rt.handleAdminReviewContestSubmission(w, r, parts[0])
+}
+
+func (rt *Router) handleAdminReviewContestSubmission(w http.ResponseWriter, r *http.Request, submissionID string) {
+	admin, ok := rt.requireAdminUser(w, r)
+	if !ok {
+		return
+	}
+	var input domain.ContestSubmissionReviewInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容格式不正确"})
+		return
+	}
+	if input.Status != "pending" && input.Status != "shortlisted" && input.Status != "winner" && input.Status != "rejected" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参赛状态不正确"})
+		return
+	}
+	item, err := rt.store.UpdateContestSubmissionReview(r.Context(), submissionID, input.Status, trimLimit(input.AdminNote, 1000), admin.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "保存参赛作品状态失败"})
+		return
+	}
+	rt.notifyContestSubmissionReview(item)
+	writeJSON(w, http.StatusOK, item)
+}
