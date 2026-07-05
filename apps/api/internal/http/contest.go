@@ -61,7 +61,7 @@ func (rt *Router) handleCreateContestSubmission(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请填写作品介绍"})
 		return
 	}
-	story := trimLimit(input.Story, 1000)
+	story := trimLimit(input.Story, 100000)
 	username := user.Username
 	if username == "" {
 		username = user.Email

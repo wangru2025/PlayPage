@@ -117,7 +117,8 @@ export default function ContestSubmitPage() {
 
           <label className="field">
             <span>创作故事，可选</span>
-            <textarea rows={5} value={story} maxLength={1000} onChange={(event) => setStory(event.target.value)} disabled={submitted || working} placeholder="你为什么想做这个作品？用了 AI 吗？有没有遇到什么问题？" />
+            <textarea rows={8} value={story} maxLength={100000} onChange={(event) => setStory(event.target.value)} disabled={submitted || working} placeholder="你为什么想做这个作品？用了 AI 吗？有没有遇到什么问题？可以写长一点。" />
+            <span className="field-note">最多 100000 字，正常创作故事基本不会写满。</span>
           </label>
 
           <label>
