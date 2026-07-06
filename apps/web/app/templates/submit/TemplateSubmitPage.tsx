@@ -366,9 +366,6 @@ export function TemplateSubmitPage() {
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 12 }}>
-        <nav aria-label="模板投稿导航">
-          <a className="button-secondary" href="/templates">返回模板市场</a>
-        </nav>
         <h1 style={{ margin: 0, fontSize: "2.5rem" }}>投稿模板</h1>
         <p style={{ margin: 0, color: "var(--muted)" }}>
           模板本质上是一个 HTML 文件，加上一份参数声明和可选的数据表声明。用户从模板创建作品时，PlayPage 会把 HTML 里的占位符替换为用户填写的参数。

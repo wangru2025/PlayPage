@@ -13,16 +13,30 @@ type User struct {
 }
 
 type Project struct {
-	ID               string    `json:"id"`
-	Username         string    `json:"username"`
-	Slug             string    `json:"slug"`
-	Name             string    `json:"name"`
-	Interactive      bool      `json:"interactive"`
-	AnalyticsEnabled bool      `json:"analyticsEnabled"`
-	Visibility       string    `json:"visibility"`
-	CurrentRelease   string    `json:"currentReleaseId"`
-	PublicURL        string    `json:"publicUrl"`
-	CreatedAt        time.Time `json:"createdAt"`
+	ID                      string    `json:"id"`
+	Username                string    `json:"username"`
+	Slug                    string    `json:"slug"`
+	Name                    string    `json:"name"`
+	Interactive             bool      `json:"interactive"`
+	AnalyticsEnabled        bool      `json:"analyticsEnabled"`
+	ShowOnProfile           bool      `json:"showOnProfile"`
+	AllowForks              bool      `json:"allowForks"`
+	Visibility              string    `json:"visibility"`
+	CurrentRelease          string    `json:"currentReleaseId"`
+	PublicURL               string    `json:"publicUrl"`
+	ForkedFromProjectID     string    `json:"forkedFromProjectId,omitempty"`
+	ForkedFromReleaseID     string    `json:"forkedFromReleaseId,omitempty"`
+	ForkedFromUserID        string    `json:"forkedFromUserId,omitempty"`
+	ForkedFromUsername      string    `json:"forkedFromUsername,omitempty"`
+	ForkedFromProjectName   string    `json:"forkedFromProjectName,omitempty"`
+	ForkedFromProjectURL    string    `json:"forkedFromProjectUrl,omitempty"`
+	ForkedFromSnapshotName  string    `json:"forkedFromSnapshotName,omitempty"`
+	ForkedFromSnapshotOwner string    `json:"forkedFromSnapshotOwner,omitempty"`
+	FavoritesCount          int       `json:"favoritesCount"`
+	ForksCount              int       `json:"forksCount"`
+	FavoritedByMe           bool      `json:"favoritedByMe,omitempty"`
+	CanSubmitProposal       bool      `json:"canSubmitProposal,omitempty"`
+	CreatedAt               time.Time `json:"createdAt"`
 }
 
 type PublicProjectAccess struct {
@@ -75,6 +89,120 @@ type ProjectCreateInput struct {
 	Slug             string `json:"slug"`
 	Interactive      bool   `json:"interactive"`
 	AnalyticsEnabled bool   `json:"analyticsEnabled"`
+	ShowOnProfile    bool   `json:"showOnProfile"`
+	AllowForks       bool   `json:"allowForks"`
+}
+
+type ProjectForkInput struct {
+	Name             string `json:"name"`
+	Slug             string `json:"slug"`
+	Interactive      bool   `json:"interactive"`
+	AnalyticsEnabled bool   `json:"analyticsEnabled"`
+	ShowOnProfile    bool   `json:"showOnProfile"`
+	AllowForks       bool   `json:"allowForks"`
+}
+
+type AuthorProfile struct {
+	Username       string    `json:"username"`
+	DisplayName    string    `json:"displayName"`
+	JoinedAt       time.Time `json:"joinedAt"`
+	Projects       []Project `json:"projects"`
+	ProjectCount   int       `json:"projectCount"`
+	FavoritesCount int       `json:"favoritesCount"`
+	ForksCount     int       `json:"forksCount"`
+	FollowersCount int       `json:"followersCount"`
+	FollowingCount int       `json:"followingCount"`
+	FollowingByMe  bool      `json:"followingByMe,omitempty"`
+}
+
+type AuthorSummary struct {
+	UserID         string    `json:"userId"`
+	Username       string    `json:"username"`
+	DisplayName    string    `json:"displayName"`
+	JoinedAt       time.Time `json:"joinedAt"`
+	ProjectCount   int       `json:"projectCount"`
+	FollowersCount int       `json:"followersCount"`
+}
+
+type NotificationRecipient struct {
+	Email    string `json:"email"`
+	Username string `json:"username"`
+}
+
+type ProjectDiscussion struct {
+	ID               string    `json:"id"`
+	ProjectID        string    `json:"projectId"`
+	ProjectName      string    `json:"projectName,omitempty"`
+	ProjectURL       string    `json:"projectUrl,omitempty"`
+	AuthorUserID     string    `json:"authorUserId"`
+	AuthorUsername   string    `json:"authorUsername"`
+	AuthorEmail      string    `json:"authorEmail,omitempty"`
+	Title            string    `json:"title"`
+	Body             string    `json:"body"`
+	Status           string    `json:"status"`
+	CommentsCount    int       `json:"commentsCount"`
+	LastCommentedAt  time.Time `json:"lastCommentedAt"`
+	ClosedByUserID   string    `json:"closedByUserId,omitempty"`
+	ClosedByUsername string    `json:"closedByUsername,omitempty"`
+	ClosedAt         time.Time `json:"closedAt,omitempty"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
+type ProjectDiscussionComment struct {
+	ID             string    `json:"id"`
+	DiscussionID   string    `json:"discussionId"`
+	AuthorUserID   string    `json:"authorUserId"`
+	AuthorUsername string    `json:"authorUsername"`
+	AuthorEmail    string    `json:"authorEmail,omitempty"`
+	Body           string    `json:"body"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
+type ProjectDiscussionCreateInput struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+type ProjectDiscussionCommentCreateInput struct {
+	Body string `json:"body"`
+}
+
+type ProjectProposal struct {
+	ID                  string    `json:"id"`
+	SourceProjectID     string    `json:"sourceProjectId"`
+	SourceProjectName   string    `json:"sourceProjectName"`
+	SourceProjectURL    string    `json:"sourceProjectUrl"`
+	TargetProjectID     string    `json:"targetProjectId"`
+	TargetProjectName   string    `json:"targetProjectName"`
+	TargetProjectURL    string    `json:"targetProjectUrl"`
+	AuthorUserID        string    `json:"authorUserId"`
+	AuthorUsername      string    `json:"authorUsername"`
+	AuthorEmail         string    `json:"authorEmail,omitempty"`
+	TargetOwnerUserID   string    `json:"targetOwnerUserId"`
+	TargetOwnerUsername string    `json:"targetOwnerUsername"`
+	TargetOwnerEmail    string    `json:"targetOwnerEmail,omitempty"`
+	Title               string    `json:"title"`
+	Body                string    `json:"body"`
+	Status              string    `json:"status"`
+	SourceReleaseID     string    `json:"sourceReleaseId"`
+	MergedReleaseID     string    `json:"mergedReleaseId,omitempty"`
+	ReviewNote          string    `json:"reviewNote"`
+	ReviewedBy          string    `json:"reviewedBy,omitempty"`
+	ReviewedAt          time.Time `json:"reviewedAt,omitempty"`
+	CreatedAt           time.Time `json:"createdAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
+}
+
+type ProjectProposalCreateInput struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+type ProjectProposalReviewInput struct {
+	Status string `json:"status"`
+	Note   string `json:"note"`
 }
 
 type ProjectVisibilityUpdateInput struct {
@@ -90,6 +218,77 @@ type ProjectSettingsUpdateInput struct {
 	Slug             string `json:"slug"`
 	Interactive      bool   `json:"interactive"`
 	AnalyticsEnabled bool   `json:"analyticsEnabled"`
+	ShowOnProfile    bool   `json:"showOnProfile"`
+	AllowForks       bool   `json:"allowForks"`
+}
+
+type AppBuildSettings struct {
+	ID                 string    `json:"id"`
+	UserID             string    `json:"userId"`
+	ProjectID          string    `json:"projectId"`
+	AppName            string    `json:"appName"`
+	AndroidEnabled     bool      `json:"androidEnabled"`
+	WindowsEnabled     bool      `json:"windowsEnabled"`
+	AutoUpdate         bool      `json:"autoUpdate"`
+	AndroidPackageName string    `json:"androidPackageName"`
+	WindowsPackageName string    `json:"windowsPackageName"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
+}
+
+type AppBuildSettingsInput struct {
+	AppName            string `json:"appName"`
+	AndroidEnabled     bool   `json:"androidEnabled"`
+	WindowsEnabled     bool   `json:"windowsEnabled"`
+	AutoUpdate         bool   `json:"autoUpdate"`
+	AndroidPackageName string `json:"androidPackageName"`
+	WindowsPackageName string `json:"windowsPackageName"`
+}
+
+type AppBuildJob struct {
+	ID             string    `json:"id"`
+	UserID         string    `json:"userId"`
+	ProjectID      string    `json:"projectId"`
+	ReleaseID      string    `json:"releaseId"`
+	Platform       string    `json:"platform"`
+	AppName        string    `json:"appName"`
+	PackageName    string    `json:"packageName"`
+	VersionCode    int       `json:"versionCode"`
+	VersionName    string    `json:"versionName"`
+	AutoUpdate     bool      `json:"autoUpdate"`
+	Status         string    `json:"status"`
+	ArtifactPath   string    `json:"artifactPath"`
+	ArtifactSHA256 string    `json:"artifactSha256"`
+	ArtifactSize   int64     `json:"artifactSize"`
+	GitHubRunID    string    `json:"githubRunId"`
+	ErrorMessage   string    `json:"errorMessage"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
+type AppBuildCreateInput struct {
+	Platform   string `json:"platform"`
+	AutoUpdate bool   `json:"autoUpdate"`
+}
+
+type AppBuildCompleteInput struct {
+	Status         string `json:"status"`
+	ArtifactPath   string `json:"artifactPath"`
+	ArtifactSHA256 string `json:"artifactSha256"`
+	ArtifactSize   int64  `json:"artifactSize"`
+	GitHubRunID    string `json:"githubRunId"`
+	ErrorMessage   string `json:"errorMessage"`
+}
+
+type AppUpdateInfo struct {
+	HasUpdate         bool   `json:"hasUpdate"`
+	LatestVersionCode int    `json:"latestVersionCode"`
+	LatestVersionName string `json:"latestVersionName"`
+	ReleaseNote       string `json:"releaseNote"`
+	DownloadURL       string `json:"downloadUrl"`
+	SHA256            string `json:"sha256"`
+	Size              int64  `json:"size"`
+	Force             bool   `json:"force"`
 }
 
 type ContestSubmission struct {

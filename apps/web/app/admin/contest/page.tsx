@@ -98,7 +98,6 @@ export default function AdminContestPage() {
         <h1 style={{ margin: 0, fontSize: "2.3rem" }}>创作比赛管理</h1>
         <p style={{ margin: 0, color: "var(--muted)" }}>查看用户提交的参赛作品，标记入围、获奖或不入选。</p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <a className="button-secondary" href="/admin">返回管理首页</a>
           <button className="button-secondary" type="button" onClick={() => setShowRejected((value) => !value)}>
             {showRejected ? "隐藏不入选项目" : "显示不入选项目"}
           </button>

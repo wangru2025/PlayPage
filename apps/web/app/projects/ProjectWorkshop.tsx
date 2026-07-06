@@ -16,9 +16,18 @@ type Project = {
   name: string;
   interactive: boolean;
   analyticsEnabled: boolean;
+  showOnProfile: boolean;
   visibility: string;
   publicUrl: string;
   currentReleaseId?: string;
+  allowForks: boolean;
+  favoritesCount: number;
+  forksCount: number;
+  canSubmitProposal?: boolean;
+  forkedFromProjectId?: string;
+  forkedFromUsername?: string;
+  forkedFromProjectName?: string;
+  forkedFromProjectUrl?: string;
 };
 
 type ProjectListResponse = {
@@ -74,9 +83,17 @@ const text = {
   interactiveOn: "已启用互动功能",
   interactiveOff: "未启用互动功能",
   analyticsOn: "已启用访问量统计",
+  allowForksOn: "允许改编",
+  allowForksOff: "禁止改编",
+  showOnProfileOn: "主页展示",
+  showOnProfileOff: "不在主页展示",
   openStats: "统计数据",
   projectSettings: "作品设置",
   releaseHistory: "作品历史版本",
+  appBuilds: "导出安装包",
+  discussions: "作品讨论区",
+  proposals: "改进提案",
+  submitProposal: "提交提案",
   uploadNew: "上传新版本",
   downloadSource: "下载作品源文件",
   deleteProject: "删除作品",
@@ -321,11 +338,25 @@ export function ProjectWorkshop() {
                     {text.url}
                     {project.publicUrl}
                   </p>
+                  {project.forkedFromProjectId ? (
+                    <p style={{ margin: 0, color: "var(--muted)" }}>
+                      改编自 {project.forkedFromUsername || "原作者"} 的
+                      {project.forkedFromProjectUrl ? (
+                        <a href={project.forkedFromProjectUrl} target="_blank" rel="noreferrer">《{project.forkedFromProjectName || "原作品"}》</a>
+                      ) : (
+                        <>《{project.forkedFromProjectName || "原作品"}》</>
+                      )}
+                    </p>
+                  ) : null}
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <span className="soft-badge">{project.currentReleaseId ? text.published : text.noUpload}</span>
                     <span className="soft-badge">{project.visibility === "public" ? text.publicInSquare : text.onlyLink}</span>
                     {project.interactive ? <span className="soft-badge">{text.interactiveOn}</span> : <span className="soft-badge">{text.interactiveOff}</span>}
                     {project.analyticsEnabled ? <span className="soft-badge">{text.analyticsOn}</span> : null}
+                    <span className="soft-badge">{project.showOnProfile ? text.showOnProfileOn : text.showOnProfileOff}</span>
+                    <span className="soft-badge">{project.allowForks ? text.allowForksOn : text.allowForksOff}</span>
+                    <span className="soft-badge">收藏 {project.favoritesCount}</span>
+                    <span className="soft-badge">被改编 {project.forksCount}</span>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "end" }}>
@@ -371,6 +402,20 @@ export function ProjectWorkshop() {
                   <a className="button-secondary" href={`/projects/${project.id}/releases`}>
                     {text.releaseHistory}
                   </a>
+                  <a className="button-secondary" href={`/projects/${project.id}/app-builds`}>
+                    {text.appBuilds}
+                  </a>
+                  <a className="button-secondary" href={`/projects/${project.id}/discussions`}>
+                    {text.discussions}
+                  </a>
+                  <a className="button-secondary" href={`/projects/${project.id}/proposals`}>
+                    {text.proposals}
+                  </a>
+                  {project.forkedFromProjectId && project.canSubmitProposal ? (
+                    <a className="button-secondary" href={`/projects/${project.id}/proposals/new`}>
+                      {text.submitProposal}
+                    </a>
+                  ) : null}
                   <button
                     className="button-secondary"
                     type="button"

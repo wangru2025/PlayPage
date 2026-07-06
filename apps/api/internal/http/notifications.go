@@ -126,6 +126,42 @@ func (rt *Router) notifyContestSubmissionReview(item domain.ContestSubmission) {
 	}()
 }
 
+func (rt *Router) notifyProjectProposalCreated(item domain.ProjectProposal) {
+	if rt.mailer == nil || strings.TrimSpace(item.TargetOwnerEmail) == "" {
+		return
+	}
+	subject := "PlayPage 收到新的改进提案"
+	body := fmt.Sprintf("你好，\n\n你的作品《%s》收到了来自 @%s 的改进提案。\n\n提案标题：%s\n提案说明：\n%s\n\n你可以登录 PlayPage，在作品的改进提案页面查看并决定是否采纳。\n\nPlayPage",
+		item.TargetProjectName, item.AuthorUsername, item.Title, item.Body)
+	go func() {
+		if err := rt.mailer.SendText(item.TargetOwnerEmail, subject, body); err != nil {
+			log.Printf("send project proposal created mail failed: proposal_id=%s err=%v", item.ID, err)
+		}
+	}()
+}
+
+func (rt *Router) notifyProjectProposalReviewed(item domain.ProjectProposal) {
+	if rt.mailer == nil || strings.TrimSpace(item.AuthorEmail) == "" {
+		return
+	}
+	subject := "PlayPage 改进提案处理结果"
+	statusText := proposalStatusText(item.Status)
+	body := fmt.Sprintf("你好，\n\n你提交给作品《%s》的改进提案已有处理结果。\n\n提案标题：%s\n当前状态：%s\n",
+		item.TargetProjectName, item.Title, statusText)
+	if strings.TrimSpace(item.ReviewNote) != "" {
+		body += "作者备注：" + strings.TrimSpace(item.ReviewNote) + "\n"
+	}
+	if item.Status == "accepted" {
+		body += "\n你的改进已经合并到原作品的新版本中。\n"
+	}
+	body += "\nPlayPage"
+	go func() {
+		if err := rt.mailer.SendText(item.AuthorEmail, subject, body); err != nil {
+			log.Printf("send project proposal reviewed mail failed: proposal_id=%s err=%v", item.ID, err)
+		}
+	}()
+}
+
 func projectDomainStatusText(status string) string {
 	switch status {
 	case "active":

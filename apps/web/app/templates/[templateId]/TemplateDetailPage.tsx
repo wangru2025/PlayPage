@@ -11,7 +11,6 @@ type TemplateDetailResponse = {
 const text = {
   loading: "正在读取模板。",
   use: "使用这个模板创建作品",
-  back: "返回模板市场",
   configTitle: "可配置参数",
   dataTitle: "模板数据表",
   noCollections: "这个模板暂时不需要自动创建数据表。",
@@ -46,9 +45,6 @@ export function TemplateDetailPage({ templateId }: { templateId: string }) {
   return (
     <section style={{ display: "grid", gap: 18 }}>
       <header className="panel" style={{ padding: 28, display: "grid", gap: 12 }}>
-        <nav aria-label="模板详情导航" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <a className="button-secondary" href="/templates">{text.back}</a>
-        </nav>
         <h1 style={{ margin: 0, fontSize: "2.5rem" }}>{template ? template.name : "模板详情"}</h1>
         <p style={{ margin: 0, color: "var(--muted)" }}>
           {template ? `${template.categoryLabel} · ${template.source === "community" ? `${text.author}：${template.authorName || "未知作者"}` : text.official}` : "查看模板信息。"}

@@ -48,6 +48,15 @@ type MemoryStore struct {
 	sessions                    map[string]memorySession
 	projects                    map[string]domain.Project
 	projectUser                 map[string]string
+	projectFavorites            map[string]map[string]bool
+	authorFollows               map[string]map[string]bool
+	projectNotificationEvents   map[string]bool
+	projectDiscussions          map[string]domain.ProjectDiscussion
+	projectDiscussionComments   map[string][]domain.ProjectDiscussionComment
+	projectProposals            map[string]domain.ProjectProposal
+	appBuildSettings            map[string]domain.AppBuildSettings
+	appBuildJobs                map[string]domain.AppBuildJob
+	appUpdateChannels           map[string]domain.AppUpdateInfo
 	collections                 map[string][]domain.Collection
 	records                     map[string][]domain.Record
 	releases                    map[string][]domain.Release
@@ -76,6 +85,15 @@ func NewMemoryStore(publicBase string) *MemoryStore {
 		sessions:                    map[string]memorySession{},
 		projects:                    map[string]domain.Project{},
 		projectUser:                 map[string]string{},
+		projectFavorites:            map[string]map[string]bool{},
+		authorFollows:               map[string]map[string]bool{},
+		projectNotificationEvents:   map[string]bool{},
+		projectDiscussions:          map[string]domain.ProjectDiscussion{},
+		projectDiscussionComments:   map[string][]domain.ProjectDiscussionComment{},
+		projectProposals:            map[string]domain.ProjectProposal{},
+		appBuildSettings:            map[string]domain.AppBuildSettings{},
+		appBuildJobs:                map[string]domain.AppBuildJob{},
+		appUpdateChannels:           map[string]domain.AppUpdateInfo{},
 		collections:                 map[string][]domain.Collection{},
 		records:                     map[string][]domain.Record{},
 		releases:                    map[string][]domain.Release{},
@@ -269,7 +287,7 @@ func (s *MemoryStore) ListProjects(_ context.Context, userID string) ([]domain.P
 	items := make([]domain.Project, 0, len(s.projects))
 	for _, project := range s.projects {
 		if s.projectUser[project.ID] == userID {
-			items = append(items, project)
+			items = append(items, s.enrichProjectLocked(project, userID))
 		}
 	}
 
@@ -308,12 +326,458 @@ func (s *MemoryStore) ListPublicProjects(_ context.Context) ([]domain.Project, e
 
 	items := make([]domain.Project, 0, len(s.projects))
 	for _, project := range s.projects {
-		if project.Visibility == "public" && project.CurrentRelease != "" {
-			items = append(items, project)
+		if project.CurrentRelease != "" && project.ShowOnProfile {
+			items = append(items, s.enrichProjectLocked(project, ""))
 		}
 	}
 
 	return items, nil
+}
+
+func (s *MemoryStore) enrichProjectLocked(project domain.Project, viewerUserID string) domain.Project {
+	project.PublicURL = buildPublicURL(s.publicBase, project.Username, project.Slug)
+	project.FavoritesCount = len(s.projectFavorites[project.ID])
+	project.ForksCount = 0
+	for _, item := range s.projects {
+		if item.ForkedFromProjectID == project.ID {
+			project.ForksCount++
+		}
+	}
+	if viewerUserID != "" {
+		project.FavoritedByMe = s.projectFavorites[project.ID][viewerUserID]
+	}
+	if project.ForkedFromProjectID != "" {
+		if source, ok := s.projects[project.ForkedFromProjectID]; ok {
+			project.ForkedFromUsername = source.Username
+			project.ForkedFromProjectName = source.Name
+			project.ForkedFromProjectURL = buildPublicURL(s.publicBase, source.Username, source.Slug)
+			project.CanSubmitProposal = source.CurrentRelease != "" && source.AllowForks
+		} else {
+			project.ForkedFromUsername = project.ForkedFromSnapshotOwner
+			project.ForkedFromProjectName = project.ForkedFromSnapshotName
+		}
+	}
+	return project
+}
+
+func (s *MemoryStore) GetPublicProject(_ context.Context, projectID string) (domain.Project, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	project, ok := s.projects[projectID]
+	if !ok || project.Visibility != "public" || project.CurrentRelease == "" {
+		return domain.Project{}, false, nil
+	}
+	return s.enrichProjectLocked(project, ""), true, nil
+}
+
+func (s *MemoryStore) GetAuthorProfile(_ context.Context, username string) (domain.AuthorProfile, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var user domain.User
+	found := false
+	for _, item := range s.users {
+		if item.Username == username {
+			user = item
+			found = true
+			break
+		}
+	}
+	if !found {
+		return domain.AuthorProfile{}, false, nil
+	}
+	profile := domain.AuthorProfile{Username: user.Username, DisplayName: user.Username, JoinedAt: user.CreatedAt}
+	for followerID, targets := range s.authorFollows {
+		if targets[user.ID] {
+			profile.FollowersCount++
+		}
+		if followerID == user.ID {
+			profile.FollowingCount = len(targets)
+		}
+	}
+	for _, project := range s.projects {
+		if s.projectUser[project.ID] == user.ID && project.CurrentRelease != "" && project.ShowOnProfile {
+			project = s.enrichProjectLocked(project, "")
+			profile.Projects = append(profile.Projects, project)
+			profile.ProjectCount++
+			profile.FavoritesCount += project.FavoritesCount
+			profile.ForksCount += project.ForksCount
+		}
+	}
+	return profile, true, nil
+}
+
+func (s *MemoryStore) IsFollowingAuthor(_ context.Context, followerUserID, targetUsername string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	targetID := ""
+	for _, user := range s.users {
+		if user.Username == targetUsername {
+			targetID = user.ID
+			break
+		}
+	}
+	if targetID == "" {
+		return false, nil
+	}
+	return s.authorFollows[followerUserID][targetID], nil
+}
+
+func (s *MemoryStore) FollowAuthor(_ context.Context, followerUserID, targetUsername string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	targetID := ""
+	for _, user := range s.users {
+		if user.Username == targetUsername {
+			targetID = user.ID
+			break
+		}
+	}
+	if targetID == "" || targetID == followerUserID {
+		return nil
+	}
+	if _, ok := s.authorFollows[followerUserID]; !ok {
+		s.authorFollows[followerUserID] = map[string]bool{}
+	}
+	s.authorFollows[followerUserID][targetID] = true
+	return nil
+}
+
+func (s *MemoryStore) UnfollowAuthor(_ context.Context, followerUserID, targetUsername string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	targetID := ""
+	for _, user := range s.users {
+		if user.Username == targetUsername {
+			targetID = user.ID
+			break
+		}
+	}
+	delete(s.authorFollows[followerUserID], targetID)
+	return nil
+}
+
+func (s *MemoryStore) ListFollowedAuthors(_ context.Context, followerUserID string) ([]domain.AuthorSummary, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.AuthorSummary{}
+	for targetID := range s.authorFollows[followerUserID] {
+		user, ok := s.users[targetID]
+		if !ok {
+			continue
+		}
+		item := domain.AuthorSummary{UserID: user.ID, Username: user.Username, DisplayName: user.Username, JoinedAt: user.CreatedAt}
+		for _, project := range s.projects {
+			if s.projectUser[project.ID] == targetID && project.CurrentRelease != "" && project.ShowOnProfile {
+				item.ProjectCount++
+			}
+		}
+		for _, targets := range s.authorFollows {
+			if targets[targetID] {
+				item.FollowersCount++
+			}
+		}
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].JoinedAt.After(items[j].JoinedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) ListAuthorFollowerRecipients(_ context.Context, authorUsername string) ([]domain.NotificationRecipient, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	authorID := ""
+	for _, user := range s.users {
+		if user.Username == authorUsername {
+			authorID = user.ID
+			break
+		}
+	}
+	if authorID == "" {
+		return []domain.NotificationRecipient{}, nil
+	}
+	items := []domain.NotificationRecipient{}
+	for followerID, targets := range s.authorFollows {
+		if !targets[authorID] {
+			continue
+		}
+		follower, ok := s.users[followerID]
+		if ok && follower.Status == "active" {
+			items = append(items, domain.NotificationRecipient{Email: follower.Email, Username: follower.Username})
+		}
+	}
+	return items, nil
+}
+
+func (s *MemoryStore) TryCreateProjectNotificationEvent(_ context.Context, projectID, eventKey string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := projectID + ":" + eventKey
+	if s.projectNotificationEvents[key] {
+		return false, nil
+	}
+	s.projectNotificationEvents[key] = true
+	return true, nil
+}
+
+func (s *MemoryStore) IsProjectFavorited(_ context.Context, userID, projectID string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.projectFavorites[projectID][userID], nil
+}
+
+func (s *MemoryStore) AddProjectFavorite(_ context.Context, userID, projectID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.projectFavorites[projectID]; !ok {
+		s.projectFavorites[projectID] = map[string]bool{}
+	}
+	s.projectFavorites[projectID][userID] = true
+	return nil
+}
+
+func (s *MemoryStore) RemoveProjectFavorite(_ context.Context, userID, projectID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.projectFavorites[projectID], userID)
+	return nil
+}
+
+func (s *MemoryStore) ListUserFavoriteProjects(_ context.Context, userID string) ([]domain.Project, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.Project{}
+	for projectID, users := range s.projectFavorites {
+		if !users[userID] {
+			continue
+		}
+		project, ok := s.projects[projectID]
+		if !ok || project.Visibility != "public" || project.CurrentRelease == "" {
+			continue
+		}
+		project = s.enrichProjectLocked(project, userID)
+		project.FavoritedByMe = true
+		items = append(items, project)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) ListProjectDiscussions(_ context.Context, projectID, status, searchQuery string) ([]domain.ProjectDiscussion, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.ProjectDiscussion{}
+	searchQuery = strings.ToLower(strings.TrimSpace(searchQuery))
+	for _, item := range s.projectDiscussions {
+		if item.ProjectID != projectID {
+			continue
+		}
+		if status != "" && item.Status != status {
+			continue
+		}
+		if searchQuery != "" {
+			haystack := strings.ToLower(item.Title + "\n" + item.Body + "\n" + item.AuthorUsername)
+			if !strings.Contains(haystack, searchQuery) {
+				continue
+			}
+		}
+		item.CommentsCount = len(s.projectDiscussionComments[item.ID])
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].LastCommentedAt.After(items[j].LastCommentedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) GetProjectDiscussion(_ context.Context, discussionID string) (domain.ProjectDiscussion, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.projectDiscussions[discussionID]
+	if !ok {
+		return domain.ProjectDiscussion{}, false, nil
+	}
+	item.CommentsCount = len(s.projectDiscussionComments[item.ID])
+	return item, true, nil
+}
+
+func (s *MemoryStore) CreateProjectDiscussion(_ context.Context, projectID, authorUserID string, input domain.ProjectDiscussionCreateInput) (domain.ProjectDiscussion, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	project := s.projects[projectID]
+	user := s.users[authorUserID]
+	item := domain.ProjectDiscussion{
+		ID:              fmt.Sprintf("discussion_%d", now.UnixNano()),
+		ProjectID:       projectID,
+		ProjectName:     project.Name,
+		ProjectURL:      buildPublicURL(s.publicBase, project.Username, project.Slug),
+		AuthorUserID:    authorUserID,
+		AuthorUsername:  user.Username,
+		AuthorEmail:     user.Email,
+		Title:           input.Title,
+		Body:            input.Body,
+		Status:          "open",
+		LastCommentedAt: now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	s.projectDiscussions[item.ID] = item
+	return item, nil
+}
+
+func (s *MemoryStore) UpdateProjectDiscussionStatus(_ context.Context, discussionID, status, operatorUserID string) (domain.ProjectDiscussion, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.projectDiscussions[discussionID]
+	if !ok {
+		return domain.ProjectDiscussion{}, false, nil
+	}
+	now := time.Now().UTC()
+	item.Status = status
+	item.UpdatedAt = now
+	if status == "closed" {
+		user := s.users[operatorUserID]
+		item.ClosedByUserID = operatorUserID
+		item.ClosedByUsername = user.Username
+		item.ClosedAt = now
+	} else {
+		item.ClosedByUserID = ""
+		item.ClosedByUsername = ""
+		item.ClosedAt = time.Time{}
+	}
+	s.projectDiscussions[discussionID] = item
+	return item, true, nil
+}
+
+func (s *MemoryStore) ListProjectDiscussionComments(_ context.Context, discussionID string) ([]domain.ProjectDiscussionComment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := append([]domain.ProjectDiscussionComment{}, s.projectDiscussionComments[discussionID]...)
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) CreateProjectDiscussionComment(_ context.Context, discussionID, authorUserID string, input domain.ProjectDiscussionCommentCreateInput) (domain.ProjectDiscussionComment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	user := s.users[authorUserID]
+	item := domain.ProjectDiscussionComment{
+		ID:             fmt.Sprintf("discussion_comment_%d", now.UnixNano()),
+		DiscussionID:   discussionID,
+		AuthorUserID:   authorUserID,
+		AuthorUsername: user.Username,
+		AuthorEmail:    user.Email,
+		Body:           input.Body,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	s.projectDiscussionComments[discussionID] = append(s.projectDiscussionComments[discussionID], item)
+	discussion := s.projectDiscussions[discussionID]
+	discussion.LastCommentedAt = now
+	discussion.UpdatedAt = now
+	s.projectDiscussions[discussionID] = discussion
+	return item, nil
+}
+
+func (s *MemoryStore) enrichProjectProposalLocked(item domain.ProjectProposal) domain.ProjectProposal {
+	source := s.projects[item.SourceProjectID]
+	target := s.projects[item.TargetProjectID]
+	author := s.users[item.AuthorUserID]
+	owner := s.users[item.TargetOwnerUserID]
+	item.SourceProjectName = source.Name
+	item.SourceProjectURL = buildPublicURL(s.publicBase, source.Username, source.Slug)
+	item.TargetProjectName = target.Name
+	item.TargetProjectURL = buildPublicURL(s.publicBase, target.Username, target.Slug)
+	item.AuthorUsername = author.Username
+	item.AuthorEmail = author.Email
+	item.TargetOwnerUsername = owner.Username
+	item.TargetOwnerEmail = owner.Email
+	return item
+}
+
+func (s *MemoryStore) ListProjectProposalsForSource(_ context.Context, sourceProjectID string) ([]domain.ProjectProposal, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.ProjectProposal{}
+	for _, item := range s.projectProposals {
+		if item.SourceProjectID == sourceProjectID {
+			items = append(items, s.enrichProjectProposalLocked(item))
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) ListProjectProposalsForTarget(_ context.Context, targetProjectID, status string) ([]domain.ProjectProposal, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	status = strings.TrimSpace(status)
+	items := []domain.ProjectProposal{}
+	for _, item := range s.projectProposals {
+		if item.TargetProjectID != targetProjectID {
+			continue
+		}
+		if status != "" && item.Status != status {
+			continue
+		}
+		items = append(items, s.enrichProjectProposalLocked(item))
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) ListUserProjectProposals(_ context.Context, userID string) ([]domain.ProjectProposal, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.ProjectProposal{}
+	for _, item := range s.projectProposals {
+		if item.AuthorUserID == userID || item.TargetOwnerUserID == userID {
+			items = append(items, s.enrichProjectProposalLocked(item))
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) GetProjectProposal(_ context.Context, proposalID string) (domain.ProjectProposal, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.projectProposals[proposalID]
+	if !ok {
+		return domain.ProjectProposal{}, false, nil
+	}
+	return s.enrichProjectProposalLocked(item), true, nil
+}
+
+func (s *MemoryStore) CreateProjectProposal(_ context.Context, input domain.ProjectProposal) (domain.ProjectProposal, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	if input.ID == "" {
+		input.ID = fmt.Sprintf("proposal_%d", now.UnixNano())
+	}
+	input.Status = "open"
+	input.CreatedAt = now
+	input.UpdatedAt = now
+	s.projectProposals[input.ID] = input
+	return s.enrichProjectProposalLocked(input), nil
+}
+
+func (s *MemoryStore) ReviewProjectProposal(_ context.Context, proposalID, status, note, reviewedByUserID, mergedReleaseID string) (domain.ProjectProposal, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.projectProposals[proposalID]
+	if !ok {
+		return domain.ProjectProposal{}, false, nil
+	}
+	now := time.Now().UTC()
+	item.Status = status
+	item.ReviewNote = note
+	item.ReviewedBy = reviewedByUserID
+	item.MergedReleaseID = mergedReleaseID
+	item.ReviewedAt = now
+	item.UpdatedAt = now
+	s.projectProposals[proposalID] = item
+	return s.enrichProjectProposalLocked(item), true, nil
 }
 
 func (s *MemoryStore) ListAdminProjects(_ context.Context) ([]domain.AdminProjectSummary, error) {
@@ -351,6 +815,8 @@ func (s *MemoryStore) CreateProject(_ context.Context, userID string, input doma
 		Slug:             input.Slug,
 		Interactive:      input.Interactive,
 		AnalyticsEnabled: input.AnalyticsEnabled,
+		ShowOnProfile:    input.ShowOnProfile,
+		AllowForks:       input.AllowForks,
 		Visibility:       "unlisted",
 		PublicURL:        buildPublicURL(s.publicBase, input.Username, input.Slug),
 		CreatedAt:        time.Now().UTC(),
@@ -364,6 +830,34 @@ func (s *MemoryStore) CreateProject(_ context.Context, userID string, input doma
 	return project, nil
 }
 
+func (s *MemoryStore) CreateForkProject(_ context.Context, userID string, input domain.ProjectCreateInput, source domain.Project) (domain.Project, error) {
+	projectID := fmt.Sprintf("proj_%d", time.Now().UnixNano())
+	project := domain.Project{
+		ID:                      projectID,
+		Name:                    input.Name,
+		Username:                input.Username,
+		Slug:                    input.Slug,
+		Interactive:             input.Interactive,
+		AnalyticsEnabled:        input.AnalyticsEnabled,
+		ShowOnProfile:           input.ShowOnProfile,
+		AllowForks:              input.AllowForks,
+		Visibility:              "unlisted",
+		PublicURL:               buildPublicURL(s.publicBase, input.Username, input.Slug),
+		ForkedFromProjectID:     source.ID,
+		ForkedFromReleaseID:     source.CurrentRelease,
+		ForkedFromSnapshotName:  source.Name,
+		ForkedFromSnapshotOwner: source.Username,
+		ForkedFromProjectURL:    source.PublicURL,
+		CreatedAt:               time.Now().UTC(),
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.projects[project.ID] = project
+	s.projectUser[project.ID] = userID
+	s.publicKeys[project.ID] = fmt.Sprintf("pk_%d", time.Now().UnixNano())
+	return s.enrichProjectLocked(project, userID), nil
+}
+
 func (s *MemoryStore) GetProject(_ context.Context, userID, projectID string) (domain.Project, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -371,7 +865,7 @@ func (s *MemoryStore) GetProject(_ context.Context, userID, projectID string) (d
 	if !ok || s.projectUser[projectID] != userID {
 		return domain.Project{}, false, nil
 	}
-	return project, true, nil
+	return s.enrichProjectLocked(project, userID), true, nil
 }
 
 func (s *MemoryStore) DeleteProject(_ context.Context, userID, projectID string) (bool, error) {
@@ -510,6 +1004,8 @@ func (s *MemoryStore) UpdateProjectSettings(_ context.Context, userID, projectID
 	project.Slug = input.Slug
 	project.Interactive = input.Interactive
 	project.AnalyticsEnabled = input.AnalyticsEnabled
+	project.ShowOnProfile = input.ShowOnProfile
+	project.AllowForks = input.AllowForks
 	project.PublicURL = buildPublicURL(s.publicBase, project.Username, input.Slug)
 	s.projects[projectID] = project
 	return project, true, nil
@@ -529,6 +1025,127 @@ func (s *MemoryStore) CreateCollection(_ context.Context, projectID string, inpu
 	defer s.mu.Unlock()
 	s.collections[collection.ProjectID] = append(s.collections[collection.ProjectID], collection)
 	return collection, nil
+}
+
+func (s *MemoryStore) GetAppBuildSettings(_ context.Context, userID, projectID string) (domain.AppBuildSettings, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.appBuildSettings[projectID]
+	if !ok || item.UserID != userID {
+		return domain.AppBuildSettings{}, false, nil
+	}
+	return item, true, nil
+}
+
+func (s *MemoryStore) UpsertAppBuildSettings(_ context.Context, userID, projectID string, input domain.AppBuildSettingsInput) (domain.AppBuildSettings, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	item := s.appBuildSettings[projectID]
+	if item.ID == "" {
+		item.ID = fmt.Sprintf("abs_%d", now.UnixNano())
+		item.UserID = userID
+		item.ProjectID = projectID
+		item.CreatedAt = now
+	}
+	item.AppName = input.AppName
+	item.AndroidEnabled = input.AndroidEnabled
+	item.WindowsEnabled = input.WindowsEnabled
+	item.AutoUpdate = input.AutoUpdate
+	item.AndroidPackageName = input.AndroidPackageName
+	item.WindowsPackageName = input.WindowsPackageName
+	item.UpdatedAt = now
+	s.appBuildSettings[projectID] = item
+	return item, nil
+}
+
+func (s *MemoryStore) CreateAppBuildJob(_ context.Context, input domain.AppBuildJob) (domain.AppBuildJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	if input.ID == "" {
+		input.ID = fmt.Sprintf("abj_%d", now.UnixNano())
+	}
+	if input.CreatedAt.IsZero() {
+		input.CreatedAt = now
+	}
+	input.UpdatedAt = now
+	s.appBuildJobs[input.ID] = input
+	return input, nil
+}
+
+func (s *MemoryStore) GetAppBuildJob(_ context.Context, jobID string) (domain.AppBuildJob, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.appBuildJobs[jobID]
+	return item, ok, nil
+}
+
+func (s *MemoryStore) ListAppBuildJobs(_ context.Context, userID, projectID string) ([]domain.AppBuildJob, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := []domain.AppBuildJob{}
+	for _, item := range s.appBuildJobs {
+		if item.UserID == userID && item.ProjectID == projectID {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *MemoryStore) CountAppBuildJobsForUserSince(_ context.Context, userID, platform string, since time.Time) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	count := 0
+	for _, item := range s.appBuildJobs {
+		if item.UserID == userID && item.Platform == platform && !item.CreatedAt.Before(since) &&
+			(item.Status == "pending" || item.Status == "building" || item.Status == "succeeded") {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (s *MemoryStore) CompleteAppBuildJob(_ context.Context, jobID string, input domain.AppBuildCompleteInput) (domain.AppBuildJob, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.appBuildJobs[jobID]
+	if !ok {
+		return domain.AppBuildJob{}, false, nil
+	}
+	item.Status = input.Status
+	item.ArtifactPath = input.ArtifactPath
+	item.ArtifactSHA256 = input.ArtifactSHA256
+	item.ArtifactSize = input.ArtifactSize
+	item.GitHubRunID = input.GitHubRunID
+	item.ErrorMessage = input.ErrorMessage
+	item.UpdatedAt = time.Now().UTC()
+	s.appBuildJobs[jobID] = item
+	if item.Status == "succeeded" && item.ArtifactPath != "" {
+		updateDownloadURL := item.ArtifactPath
+		if item.Platform == "windows" {
+			updateDownloadURL = item.ArtifactPath + "?kind=update"
+		}
+		s.appUpdateChannels[item.ProjectID+"|"+item.Platform] = domain.AppUpdateInfo{
+			HasUpdate:         false,
+			LatestVersionCode: item.VersionCode,
+			LatestVersionName: item.VersionName,
+			ReleaseNote:       "作者更新了作品内容",
+			DownloadURL:       updateDownloadURL,
+			SHA256:            item.ArtifactSHA256,
+			Size:              item.ArtifactSize,
+		}
+	}
+	return item, true, nil
+}
+
+func (s *MemoryStore) GetAppUpdateInfo(_ context.Context, projectID, platform string, versionCode int) (domain.AppUpdateInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	info := s.appUpdateChannels[projectID+"|"+platform]
+	info.HasUpdate = info.LatestVersionCode > versionCode && info.DownloadURL != ""
+	return info, nil
 }
 
 func (s *MemoryStore) ListCollections(_ context.Context, projectID string) ([]domain.Collection, error) {

@@ -1,4 +1,5 @@
 import { getJSON } from "@/lib/api";
+import { FavoriteProjectButton } from "./FavoriteProjectButton";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,14 @@ type Project = {
   name: string;
   visibility: string;
   publicUrl: string;
+  allowForks: boolean;
+  favoritesCount: number;
+  forksCount: number;
+  forkedFromProjectId?: string;
+  forkedFromUsername?: string;
+  forkedFromProjectName?: string;
+  forkedFromProjectUrl?: string;
+  favoritedByMe?: boolean;
 };
 
 type SquareResponse = {
@@ -60,14 +69,34 @@ export default async function SquarePage() {
                 <h2 style={{ margin: 0 }}>{project.name}</h2>
                 <p style={{ margin: 0, color: "var(--muted)" }}>
                   {text.author}
-                  {project.username}
+                  <a href={`/@${encodeURIComponent(project.username)}`}>{project.username}</a>
                 </p>
+                {project.forkedFromProjectId ? (
+                  <p style={{ margin: 0, color: "var(--muted)" }}>
+                    改编自 {project.forkedFromUsername || "原作者"} 的
+                    {project.forkedFromProjectUrl ? (
+                      <a href={project.forkedFromProjectUrl}>《{project.forkedFromProjectName || "原作品"}》</a>
+                    ) : (
+                      <>《{project.forkedFromProjectName || "原作品"}》</>
+                    )}
+                  </p>
+                ) : null}
                 <p style={{ margin: 0, color: "var(--muted)" }}>{project.publicUrl}</p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <span className="soft-badge">收藏 {project.favoritesCount}</span>
+                  <span className="soft-badge">被改编 {project.forksCount}</span>
+                </div>
               </div>
-              <div>
-                <a className="button-secondary" href={project.publicUrl} target="_blank" rel="noreferrer">
-                  {"打开作品"}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <a className="button-primary" href={project.publicUrl} target="_blank" rel="noreferrer">
+                  打开作品
                 </a>
+                <FavoriteProjectButton projectId={project.id} initialFavorited={project.favoritedByMe} initialCount={project.favoritesCount} />
+                {project.allowForks ? (
+                  <a className="button-secondary" href={`/projects/fork?projectId=${project.id}`}>
+                    改编这个作品
+                  </a>
+                ) : null}
               </div>
             </article>
           ))}

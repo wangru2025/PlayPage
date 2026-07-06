@@ -9,6 +9,8 @@ type Project = {
   name: string;
   interactive: boolean;
   analyticsEnabled: boolean;
+  showOnProfile: boolean;
+  allowForks: boolean;
   publicUrl: string;
 };
 
@@ -33,7 +35,11 @@ const text = {
   interactive: "启用互动功能",
   interactiveHint: "关闭后，公开互动 API 会停止读写这个作品的数据表；已有数据不会删除。",
   analytics: "启用访问量统计",
-  analyticsHint: "开启后，互动 API 请求统计会立即生效；页面访问量统计代码会在下次上传或发布作品时加入 HTML。",
+  analyticsHint: "开启后，互动 API 请求统计会立即生效；如果作品已有发布版本，保存时会自动重新发布一版并把访问统计代码加入 HTML。",
+  showOnProfile: "在作者主页展示这个作品",
+  showOnProfileHint: "关闭后，别人打开你的作者主页不会看到这个作品，但你仍可在我的作品里管理它，作品直链不受影响。",
+  allowForks: "允许别人改编这个作品",
+  allowForksHint: "允许后，其他登录用户可以复制一份到自己的作品里继续创作。原作品不会被修改，互动数据不会被复制，改编作品会显示来源。",
   publicUrl: "当前作品地址",
   save: "保存设置",
   openProject: "打开作品",
@@ -46,11 +52,15 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
   const slugId = useId();
   const interactiveId = useId();
   const analyticsId = useId();
+  const showOnProfileId = useId();
+  const allowForksId = useId();
   const [project, setProject] = useState<Project | null>(null);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [interactive, setInteractive] = useState(false);
   const [analyticsEnabled, setAnalyticsEnabled] = useState(false);
+  const [showOnProfile, setShowOnProfile] = useState(true);
+  const [allowForks, setAllowForks] = useState(true);
   const [statusText, setStatusText] = useState(text.loading);
   const [statusTone, setStatusTone] = useState<StatusTone>("info");
   const [loading, setLoading] = useState(true);
@@ -69,6 +79,8 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
       setSlug(data.project.slug);
       setInteractive(data.project.interactive);
       setAnalyticsEnabled(data.project.analyticsEnabled);
+      setShowOnProfile(data.project.showOnProfile ?? true);
+      setAllowForks(data.project.allowForks);
       setStatus(text.ready, "success");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : text.loadFail, "error");
@@ -103,13 +115,17 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
         name,
         slug,
         interactive,
-        analyticsEnabled
+        analyticsEnabled,
+        showOnProfile,
+        allowForks
       });
       setProject(updated);
       setName(updated.name);
       setSlug(updated.slug);
       setInteractive(updated.interactive);
       setAnalyticsEnabled(updated.analyticsEnabled);
+      setShowOnProfile(updated.showOnProfile ?? true);
+      setAllowForks(updated.allowForks);
       setStatus(text.saved, "success");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : text.saveFail, "error");
@@ -155,6 +171,22 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
           <span style={{ display: "grid", gap: 4 }}>
             <span>{text.analytics}</span>
             <span className="field-note">{text.analyticsHint}</span>
+          </span>
+        </label>
+
+        <label style={{ display: "flex", gap: 10, alignItems: "start" }} htmlFor={showOnProfileId}>
+          <input id={showOnProfileId} type="checkbox" checked={showOnProfile} onChange={(event) => setShowOnProfile(event.target.checked)} disabled={loading || saving} style={{ width: "auto", marginTop: 4 }} />
+          <span style={{ display: "grid", gap: 4 }}>
+            <span>{text.showOnProfile}</span>
+            <span className="field-note">{text.showOnProfileHint}</span>
+          </span>
+        </label>
+
+        <label style={{ display: "flex", gap: 10, alignItems: "start" }} htmlFor={allowForksId}>
+          <input id={allowForksId} type="checkbox" checked={allowForks} onChange={(event) => setAllowForks(event.target.checked)} disabled={loading || saving} style={{ width: "auto", marginTop: 4 }} />
+          <span style={{ display: "grid", gap: 4 }}>
+            <span>{text.allowForks}</span>
+            <span className="field-note">{text.allowForksHint}</span>
           </span>
         </label>
 

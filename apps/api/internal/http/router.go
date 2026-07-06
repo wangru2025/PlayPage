@@ -35,6 +35,8 @@ type Router struct {
 	aiClient *service.AIClient
 	aiHub    *repairAIHub
 	aiRuns   *repairAIRunRegistry
+	appBuild *service.AppBuilder
+	appHub   *appBuildHub
 }
 
 func NewRouter(cfg config.Config) http.Handler {
@@ -47,16 +49,24 @@ func NewRouter(cfg config.Config) http.Handler {
 		aiClient: service.NewAIClient(cfg.AIProviderBaseURL, cfg.AIProviderAPIKey, cfg.AIProviderModel),
 		aiHub:    newRepairAIHub(),
 		aiRuns:   newRepairAIRunRegistry(),
+		appBuild: service.NewAppBuilder(cfg.GitHubToken, cfg.GitHubOwner, cfg.GitHubRepo, cfg.GitHubAppWorkflow),
+		appHub:   newAppBuildHub(),
 	}
 	router.pub = service.NewPublisher(router.store, router.releases)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", router.handleHealth)
 	mux.HandleFunc("GET /api/v1/me", router.handleMe)
+	mux.HandleFunc("GET /api/v1/me/favorites", router.handleListMyFavoriteProjects)
+	mux.HandleFunc("GET /api/v1/me/following", router.handleListMyFollowedAuthors)
+	mux.HandleFunc("GET /api/v1/me/proposals", router.handleListMyProjectProposals)
 	mux.HandleFunc("POST /api/v1/me/profile", router.handleUpdateProfile)
 	mux.HandleFunc("POST /api/v1/me/upgrade-requests", router.handleCreateUpgradeRequest)
 	mux.HandleFunc("GET /api/v1/me/upgrade-requests", router.handleListMyUpgradeRequests)
 	mux.HandleFunc("POST /api/v1/client-errors", router.handleClientErrorReport)
+	mux.HandleFunc("GET /api/v1/app-updates/check", router.handleCheckAppUpdate)
+	mux.HandleFunc("/api/v1/app-builds/", router.handlePublicAppBuildRoutes)
+	mux.HandleFunc("/api/v1/internal/app-builds/", router.handleInternalAppBuildRoutes)
 	mux.HandleFunc("GET /api/v1/projects", router.handleListProjects)
 	mux.HandleFunc("POST /api/v1/projects", router.handleCreateProject)
 	mux.HandleFunc("GET /api/v1/templates", router.handleListTemplates)
@@ -80,6 +90,7 @@ func NewRouter(cfg config.Config) http.Handler {
 	mux.HandleFunc("/api/v1/admin/template-submissions/", router.handleAdminTemplateSubmissionRoutes)
 	mux.HandleFunc("/api/v1/domain-site/", router.handleProjectDomainSite)
 	mux.HandleFunc("GET /api/v1/square", router.handleListSquare)
+	mux.HandleFunc("/api/v1/authors/", router.handleAuthorRoutes)
 	mux.HandleFunc("/api/v1/public/projects/", router.handlePublicProjectRoutes)
 	mux.HandleFunc("/api/v1/projects/", router.handleProjectRoutes)
 	mux.HandleFunc("POST /api/v1/auth/request-code", router.handleRequestCode)
@@ -157,6 +168,30 @@ func (rt *Router) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 		rt.handleGetProjectContestSubmission(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "contest-submission" && r.Method == http.MethodPost:
 		rt.handleCreateContestSubmission(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "favorite" && r.Method == http.MethodPost:
+		rt.handleAddProjectFavorite(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "favorite" && r.Method == http.MethodDelete:
+		rt.handleRemoveProjectFavorite(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "fork" && r.Method == http.MethodPost:
+		rt.handleForkProject(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "discussions" && r.Method == http.MethodGet:
+		rt.handleListProjectDiscussions(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "discussions" && r.Method == http.MethodPost:
+		rt.handleCreateProjectDiscussion(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "proposals" && r.Method == http.MethodGet:
+		rt.handleListProjectProposals(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "proposals" && r.Method == http.MethodPost:
+		rt.handleCreateProjectProposal(w, r, projectID)
+	case len(parts) == 3 && parts[1] == "proposals" && r.Method == http.MethodGet:
+		rt.handleGetProjectProposal(w, r, projectID, parts[2])
+	case len(parts) == 4 && parts[1] == "proposals" && parts[3] == "review" && r.Method == http.MethodPost:
+		rt.handleReviewProjectProposal(w, r, projectID, parts[2])
+	case len(parts) == 3 && parts[1] == "discussions" && r.Method == http.MethodGet:
+		rt.handleGetProjectDiscussion(w, r, projectID, parts[2])
+	case len(parts) == 4 && parts[1] == "discussions" && parts[3] == "comments" && r.Method == http.MethodPost:
+		rt.handleCreateProjectDiscussionComment(w, r, projectID, parts[2])
+	case len(parts) == 4 && parts[1] == "discussions" && parts[3] == "status" && r.Method == http.MethodPost:
+		rt.handleUpdateProjectDiscussionStatus(w, r, projectID, parts[2])
 	case len(parts) == 2 && parts[1] == "collections" && r.Method == http.MethodGet:
 		rt.handleListCollections(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "collections" && r.Method == http.MethodPost:
@@ -203,6 +238,24 @@ func (rt *Router) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 		rt.handleUpdateProjectPath(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "settings" && r.Method == http.MethodPost:
 		rt.handleUpdateProjectSettings(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "app-build-settings" && r.Method == http.MethodGet:
+		rt.handleGetAppBuildSettings(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "app-build-settings" && r.Method == http.MethodPost:
+		rt.handleSaveAppBuildSettings(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "app-builds" && r.Method == http.MethodGet:
+		rt.handleListAppBuilds(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "app-builds" && r.Method == http.MethodPost:
+		rt.handleCreateAppBuild(w, r, projectID)
+	case len(parts) == 3 && parts[1] == "app-builds" && parts[2] == "ws" && r.Method == http.MethodGet:
+		rt.handleAppBuildWebSocket(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "favorite" && r.Method == http.MethodGet:
+		rt.handleGetProjectFavorite(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "favorite" && r.Method == http.MethodPost:
+		rt.handleAddProjectFavorite(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "favorite" && r.Method == http.MethodDelete:
+		rt.handleRemoveProjectFavorite(w, r, projectID)
+	case len(parts) == 2 && parts[1] == "fork" && r.Method == http.MethodPost:
+		rt.handleForkProject(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "releases" && r.Method == http.MethodGet:
 		rt.handleListReleases(w, r, projectID)
 	case len(parts) == 2 && parts[1] == "releases" && r.Method == http.MethodPost:

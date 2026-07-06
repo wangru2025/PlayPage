@@ -131,7 +131,6 @@ export default function ContestSubmitPage() {
               {submitted ? "已提交" : "提交参赛"}
             </button>
             <a className="button-secondary" href="/contest">查看活动说明</a>
-            <a className="button-secondary" href="/projects">返回我的作品</a>
           </div>
         </section>
       ) : null}

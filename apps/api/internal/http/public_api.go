@@ -30,6 +30,14 @@ func (rt *Router) handlePublicProjectRoutes(w http.ResponseWriter, r *http.Reque
 		rt.handlePublicTrackVisit(w, r, projectID)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "open" && r.Method == http.MethodGet {
+		rt.handlePublicOpenProject(w, r, projectID)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "profile" && r.Method == http.MethodGet {
+		rt.handlePublicProjectProfile(w, r, projectID)
+		return
+	}
 
 	recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 	defer func() {
@@ -69,6 +77,32 @@ func (rt *Router) handlePublicProjectRoutes(w http.ResponseWriter, r *http.Reque
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "没有找到这个接口"})
 	}
+}
+
+func (rt *Router) handlePublicProjectProfile(w http.ResponseWriter, r *http.Request, projectID string) {
+	project, found, err := rt.store.GetPublicProject(r.Context(), projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取作品失败"})
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "作品不存在或没有公开"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"project": project})
+}
+
+func (rt *Router) handlePublicOpenProject(w http.ResponseWriter, r *http.Request, projectID string) {
+	project, found, err := rt.store.GetPublicProject(r.Context(), projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取作品失败"})
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "原作品不存在或没有公开"})
+		return
+	}
+	http.Redirect(w, r, project.PublicURL, http.StatusFound)
 }
 
 func (rt *Router) handlePublicProjectInfo(w http.ResponseWriter, r *http.Request, projectID string) {

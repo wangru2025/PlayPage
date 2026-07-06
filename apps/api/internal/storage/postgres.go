@@ -18,6 +18,75 @@ type PostgresStore struct {
 	publicBase string
 }
 
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func projectSelectSQL(alias string) string {
+	if alias == "" {
+		alias = "p"
+	}
+	return alias + `.id::text, ` + alias + `.username, ` + alias + `.slug, ` + alias + `.name, ` +
+		alias + `.interactive, ` + alias + `.analytics_enabled, ` + alias + `.show_on_profile, ` + alias + `.allow_forks, ` + alias + `.visibility, coalesce(` + alias + `.current_release_id::text, ''),
+		coalesce(` + alias + `.forked_from_project_id::text, ''), coalesce(` + alias + `.forked_from_release_id::text, ''), coalesce(` + alias + `.forked_from_user_id::text, ''),
+		coalesce(src.username, ''), coalesce(src.name, ''), coalesce(src.slug, ''),
+		coalesce(` + alias + `.forked_from_snapshot_owner, ''), coalesce(` + alias + `.forked_from_snapshot_name, ''), coalesce(` + alias + `.forked_from_snapshot_url, ''),
+		(select count(*) from project_favorites pf where pf.project_id = ` + alias + `.id)::int,
+		(select count(*) from projects fp where fp.forked_from_project_id = ` + alias + `.id)::int,
+		exists(select 1 from projects original where original.id = ` + alias + `.forked_from_project_id and original.current_release_id is not null and original.allow_forks = true),
+		` + alias + `.created_at`
+}
+
+func projectSourceJoinSQL(alias string) string {
+	if alias == "" {
+		alias = "p"
+	}
+	return ` left join projects src on src.id = ` + alias + `.forked_from_project_id `
+}
+
+func (s *PostgresStore) scanProject(row rowScanner) (domain.Project, error) {
+	var project domain.Project
+	var sourceUsername, sourceName, sourceSlug string
+	err := row.Scan(
+		&project.ID,
+		&project.Username,
+		&project.Slug,
+		&project.Name,
+		&project.Interactive,
+		&project.AnalyticsEnabled,
+		&project.ShowOnProfile,
+		&project.AllowForks,
+		&project.Visibility,
+		&project.CurrentRelease,
+		&project.ForkedFromProjectID,
+		&project.ForkedFromReleaseID,
+		&project.ForkedFromUserID,
+		&sourceUsername,
+		&sourceName,
+		&sourceSlug,
+		&project.ForkedFromSnapshotOwner,
+		&project.ForkedFromSnapshotName,
+		&project.ForkedFromProjectURL,
+		&project.FavoritesCount,
+		&project.ForksCount,
+		&project.CanSubmitProposal,
+		&project.CreatedAt,
+	)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	project.PublicURL = buildPublicURL(s.publicBase, project.Username, project.Slug)
+	if sourceUsername != "" && sourceSlug != "" {
+		project.ForkedFromUsername = sourceUsername
+		project.ForkedFromProjectName = sourceName
+		project.ForkedFromProjectURL = buildPublicURL(s.publicBase, sourceUsername, sourceSlug)
+	} else {
+		project.ForkedFromUsername = project.ForkedFromSnapshotOwner
+		project.ForkedFromProjectName = project.ForkedFromSnapshotName
+	}
+	return project, nil
+}
+
 func NewPostgresStore(ctx context.Context, databaseURL, publicBase string) (*PostgresStore, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
@@ -110,6 +179,28 @@ func (s *PostgresStore) UpdateUserRoleAndPlan(ctx context.Context, userID, role,
 		return domain.User{}, err
 	}
 	return user, nil
+}
+
+func scanAppBuildSettings(row rowScanner) (domain.AppBuildSettings, error) {
+	var item domain.AppBuildSettings
+	err := row.Scan(
+		&item.ID, &item.UserID, &item.ProjectID, &item.AppName,
+		&item.AndroidEnabled, &item.WindowsEnabled, &item.AutoUpdate,
+		&item.AndroidPackageName, &item.WindowsPackageName,
+		&item.CreatedAt, &item.UpdatedAt,
+	)
+	return item, err
+}
+
+func scanAppBuildJob(row rowScanner) (domain.AppBuildJob, error) {
+	var item domain.AppBuildJob
+	err := row.Scan(
+		&item.ID, &item.UserID, &item.ProjectID, &item.ReleaseID, &item.Platform,
+		&item.AppName, &item.PackageName, &item.VersionCode, &item.VersionName, &item.AutoUpdate,
+		&item.Status, &item.ArtifactPath, &item.ArtifactSHA256, &item.ArtifactSize,
+		&item.GitHubRunID, &item.ErrorMessage, &item.CreatedAt, &item.UpdatedAt,
+	)
+	return item, err
 }
 
 func (s *PostgresStore) SyncProjectUsernames(ctx context.Context, userID, username string) error {
@@ -311,10 +402,11 @@ func (s *PostgresStore) ListAdminUsers(ctx context.Context) ([]domain.AdminUserS
 
 func (s *PostgresStore) ListProjects(ctx context.Context, userID string) ([]domain.Project, error) {
 	rows, err := s.pool.Query(ctx, `
-		select id::text, username, slug, name, interactive, analytics_enabled, visibility, coalesce(current_release_id::text, ''), created_at
-		from projects
-		where owner_user_id::text = $1
-		order by created_at desc
+		select `+projectSelectSQL("p")+`
+		from projects p
+		`+projectSourceJoinSQL("p")+`
+		where p.owner_user_id::text = $1
+		order by p.created_at desc
 	`, userID)
 	if err != nil {
 		return nil, err
@@ -323,11 +415,10 @@ func (s *PostgresStore) ListProjects(ctx context.Context, userID string) ([]doma
 
 	items := []domain.Project{}
 	for rows.Next() {
-		var item domain.Project
-		if err := rows.Scan(&item.ID, &item.Username, &item.Slug, &item.Name, &item.Interactive, &item.AnalyticsEnabled, &item.Visibility, &item.CurrentRelease, &item.CreatedAt); err != nil {
+		item, err := s.scanProject(rows)
+		if err != nil {
 			return nil, err
 		}
-		item.PublicURL = buildPublicURL(s.publicBase, item.Username, item.Slug)
 		items = append(items, item)
 	}
 
@@ -336,10 +427,11 @@ func (s *PostgresStore) ListProjects(ctx context.Context, userID string) ([]doma
 
 func (s *PostgresStore) ListPublicProjects(ctx context.Context) ([]domain.Project, error) {
 	rows, err := s.pool.Query(ctx, `
-		select id::text, username, slug, name, interactive, analytics_enabled, visibility, coalesce(current_release_id::text, ''), created_at
-		from projects
-		where visibility = 'public' and current_release_id is not null
-		order by created_at desc
+		select `+projectSelectSQL("p")+`
+		from projects p
+		`+projectSourceJoinSQL("p")+`
+		where p.visibility = 'public' and p.current_release_id is not null
+		order by p.created_at desc
 		limit 60
 	`)
 	if err != nil {
@@ -349,15 +441,535 @@ func (s *PostgresStore) ListPublicProjects(ctx context.Context) ([]domain.Projec
 
 	items := []domain.Project{}
 	for rows.Next() {
-		var item domain.Project
-		if err := rows.Scan(&item.ID, &item.Username, &item.Slug, &item.Name, &item.Interactive, &item.AnalyticsEnabled, &item.Visibility, &item.CurrentRelease, &item.CreatedAt); err != nil {
+		item, err := s.scanProject(rows)
+		if err != nil {
 			return nil, err
 		}
-		item.PublicURL = buildPublicURL(s.publicBase, item.Username, item.Slug)
 		items = append(items, item)
 	}
 
 	return items, rows.Err()
+}
+
+func (s *PostgresStore) GetPublicProject(ctx context.Context, projectID string) (domain.Project, bool, error) {
+	project, err := s.scanProject(s.pool.QueryRow(ctx, `
+		select `+projectSelectSQL("p")+`
+		from projects p
+		`+projectSourceJoinSQL("p")+`
+		where p.id::text = $1 and p.visibility = 'public' and p.current_release_id is not null
+	`, projectID))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.Project{}, false, nil
+		}
+		return domain.Project{}, false, err
+	}
+	return project, true, nil
+}
+
+func (s *PostgresStore) GetAuthorProfile(ctx context.Context, username string) (domain.AuthorProfile, bool, error) {
+	var profile domain.AuthorProfile
+	var userID string
+	err := s.pool.QueryRow(ctx, `
+		select id::text, coalesce(username, ''), created_at
+		from users
+		where username = $1
+	`, username).Scan(&userID, &profile.Username, &profile.JoinedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.AuthorProfile{}, false, nil
+		}
+		return domain.AuthorProfile{}, false, err
+	}
+	profile.DisplayName = profile.Username
+	if err := s.pool.QueryRow(ctx, `
+		select
+			(select count(*) from author_follows where target_user_id::text = $1)::int,
+			(select count(*) from author_follows where follower_user_id::text = $1)::int
+	`, userID).Scan(&profile.FollowersCount, &profile.FollowingCount); err != nil {
+		return domain.AuthorProfile{}, false, err
+	}
+	rows, err := s.pool.Query(ctx, `
+		select `+projectSelectSQL("p")+`
+		from projects p
+		`+projectSourceJoinSQL("p")+`
+		where p.owner_user_id::text = $1 and p.current_release_id is not null and p.show_on_profile = true
+		order by p.created_at desc
+	`, userID)
+	if err != nil {
+		return domain.AuthorProfile{}, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		project, err := s.scanProject(rows)
+		if err != nil {
+			return domain.AuthorProfile{}, false, err
+		}
+		profile.Projects = append(profile.Projects, project)
+		profile.ProjectCount++
+		profile.FavoritesCount += project.FavoritesCount
+		profile.ForksCount += project.ForksCount
+	}
+	return profile, true, rows.Err()
+}
+
+func (s *PostgresStore) IsFollowingAuthor(ctx context.Context, followerUserID, targetUsername string) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		select exists(
+			select 1
+			from author_follows af
+			join users u on u.id = af.target_user_id
+			where af.follower_user_id::text = $1 and u.username = $2
+		)
+	`, followerUserID, targetUsername).Scan(&exists)
+	return exists, err
+}
+
+func (s *PostgresStore) FollowAuthor(ctx context.Context, followerUserID, targetUsername string) error {
+	tag, err := s.pool.Exec(ctx, `
+		insert into author_follows (follower_user_id, target_user_id)
+		select $1::uuid, u.id
+		from users u
+		where u.username = $2 and u.id <> $1::uuid
+		on conflict (follower_user_id, target_user_id) do nothing
+	`, followerUserID, targetUsername)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("没有找到可关注的作者，或不能关注自己")
+	}
+	return nil
+}
+
+func (s *PostgresStore) UnfollowAuthor(ctx context.Context, followerUserID, targetUsername string) error {
+	_, err := s.pool.Exec(ctx, `
+		delete from author_follows af
+		using users u
+		where af.target_user_id = u.id and af.follower_user_id::text = $1 and u.username = $2
+	`, followerUserID, targetUsername)
+	return err
+}
+
+func (s *PostgresStore) ListFollowedAuthors(ctx context.Context, followerUserID string) ([]domain.AuthorSummary, error) {
+	rows, err := s.pool.Query(ctx, `
+		select u.id::text, coalesce(u.username, ''), coalesce(u.username, ''), u.created_at,
+			(select count(*) from projects p where p.owner_user_id = u.id and p.visibility = 'public' and p.current_release_id is not null)::int,
+			(select count(*) from author_follows af2 where af2.target_user_id = u.id)::int
+		from author_follows af
+		join users u on u.id = af.target_user_id
+		where af.follower_user_id::text = $1
+		order by af.created_at desc
+	`, followerUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.AuthorSummary{}
+	for rows.Next() {
+		var item domain.AuthorSummary
+		if err := rows.Scan(&item.UserID, &item.Username, &item.DisplayName, &item.JoinedAt, &item.ProjectCount, &item.FollowersCount); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) ListAuthorFollowerRecipients(ctx context.Context, authorUsername string) ([]domain.NotificationRecipient, error) {
+	rows, err := s.pool.Query(ctx, `
+		select follower.email, coalesce(follower.username, '')
+		from author_follows af
+		join users author on author.id = af.target_user_id
+		join users follower on follower.id = af.follower_user_id
+		where author.username = $1 and follower.status = 'active'
+		order by af.created_at desc
+	`, authorUsername)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.NotificationRecipient{}
+	for rows.Next() {
+		var item domain.NotificationRecipient
+		if err := rows.Scan(&item.Email, &item.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) TryCreateProjectNotificationEvent(ctx context.Context, projectID, eventKey string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		insert into project_notification_events (project_id, event_key)
+		values ($1::uuid, $2)
+		on conflict (project_id, event_key) do nothing
+	`, projectID, eventKey)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (s *PostgresStore) IsProjectFavorited(ctx context.Context, userID, projectID string) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `select exists(select 1 from project_favorites where user_id::text=$1 and project_id::text=$2)`, userID, projectID).Scan(&exists)
+	return exists, err
+}
+
+func (s *PostgresStore) AddProjectFavorite(ctx context.Context, userID, projectID string) error {
+	_, err := s.pool.Exec(ctx, `
+		insert into project_favorites (user_id, project_id)
+		values ($1::uuid, $2::uuid)
+		on conflict (user_id, project_id) do nothing
+	`, userID, projectID)
+	return err
+}
+
+func (s *PostgresStore) RemoveProjectFavorite(ctx context.Context, userID, projectID string) error {
+	_, err := s.pool.Exec(ctx, `delete from project_favorites where user_id::text=$1 and project_id::text=$2`, userID, projectID)
+	return err
+}
+
+func (s *PostgresStore) ListUserFavoriteProjects(ctx context.Context, userID string) ([]domain.Project, error) {
+	rows, err := s.pool.Query(ctx, `
+		select `+projectSelectSQL("p")+`
+		from project_favorites pf
+		join projects p on p.id = pf.project_id
+		`+projectSourceJoinSQL("p")+`
+		where pf.user_id::text = $1 and p.current_release_id is not null and p.show_on_profile = true
+		order by pf.created_at desc
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.Project{}
+	for rows.Next() {
+		project, err := s.scanProject(rows)
+		if err != nil {
+			return nil, err
+		}
+		project.FavoritedByMe = true
+		items = append(items, project)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) ListProjectDiscussions(ctx context.Context, projectID, status, searchQuery string) ([]domain.ProjectDiscussion, error) {
+	query := `
+		select d.id::text, d.project_id::text, p.name, p.username, p.slug,
+			d.author_user_id::text, coalesce(author.username, ''), author.email,
+			d.title, d.body, d.status,
+			(select count(*) from project_discussion_comments c where c.discussion_id = d.id)::int,
+			d.last_commented_at, coalesce(d.closed_by_user_id::text, ''), coalesce(closer.username, ''),
+			coalesce(d.closed_at, '0001-01-01T00:00:00Z'::timestamptz), d.created_at, d.updated_at
+		from project_discussions d
+		join projects p on p.id = d.project_id
+		join users author on author.id = d.author_user_id
+		left join users closer on closer.id = d.closed_by_user_id
+		where d.project_id::text = $1`
+	args := []any{projectID}
+	if status != "" {
+		args = append(args, status)
+		query += fmt.Sprintf(" and d.status = $%d", len(args))
+	}
+	searchQuery = strings.TrimSpace(searchQuery)
+	if searchQuery != "" {
+		args = append(args, "%"+searchQuery+"%")
+		query += fmt.Sprintf(" and (d.title ilike $%d or d.body ilike $%d or coalesce(author.username, '') ilike $%d)", len(args), len(args), len(args))
+	}
+	query += " order by d.last_commented_at desc"
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.ProjectDiscussion{}
+	for rows.Next() {
+		item, err := s.scanProjectDiscussion(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) GetProjectDiscussion(ctx context.Context, discussionID string) (domain.ProjectDiscussion, bool, error) {
+	item, err := s.scanProjectDiscussion(s.pool.QueryRow(ctx, `
+		select d.id::text, d.project_id::text, p.name, p.username, p.slug,
+			d.author_user_id::text, coalesce(author.username, ''), author.email,
+			d.title, d.body, d.status,
+			(select count(*) from project_discussion_comments c where c.discussion_id = d.id)::int,
+			d.last_commented_at, coalesce(d.closed_by_user_id::text, ''), coalesce(closer.username, ''),
+			coalesce(d.closed_at, '0001-01-01T00:00:00Z'::timestamptz), d.created_at, d.updated_at
+		from project_discussions d
+		join projects p on p.id = d.project_id
+		join users author on author.id = d.author_user_id
+		left join users closer on closer.id = d.closed_by_user_id
+		where d.id::text = $1
+	`, discussionID))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.ProjectDiscussion{}, false, nil
+		}
+		return domain.ProjectDiscussion{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *PostgresStore) scanProjectDiscussion(row rowScanner) (domain.ProjectDiscussion, error) {
+	var item domain.ProjectDiscussion
+	var projectUsername, projectSlug string
+	if err := row.Scan(
+		&item.ID, &item.ProjectID, &item.ProjectName, &projectUsername, &projectSlug,
+		&item.AuthorUserID, &item.AuthorUsername, &item.AuthorEmail,
+		&item.Title, &item.Body, &item.Status, &item.CommentsCount, &item.LastCommentedAt,
+		&item.ClosedByUserID, &item.ClosedByUsername, &item.ClosedAt, &item.CreatedAt, &item.UpdatedAt,
+	); err != nil {
+		return domain.ProjectDiscussion{}, err
+	}
+	item.ProjectURL = buildPublicURL(s.publicBase, projectUsername, projectSlug)
+	return item, nil
+}
+
+func (s *PostgresStore) CreateProjectDiscussion(ctx context.Context, projectID, authorUserID string, input domain.ProjectDiscussionCreateInput) (domain.ProjectDiscussion, error) {
+	item, err := s.scanProjectDiscussion(s.pool.QueryRow(ctx, `
+		with created as (
+			insert into project_discussions (project_id, author_user_id, title, body)
+			values ($1::uuid, $2::uuid, $3, $4)
+			returning *
+		)
+		select d.id::text, d.project_id::text, p.name, p.username, p.slug,
+			d.author_user_id::text, coalesce(author.username, ''), author.email,
+			d.title, d.body, d.status, 0::int,
+			d.last_commented_at, coalesce(d.closed_by_user_id::text, ''), ''::text,
+			coalesce(d.closed_at, '0001-01-01T00:00:00Z'::timestamptz), d.created_at, d.updated_at
+		from created d
+		join projects p on p.id = d.project_id
+		join users author on author.id = d.author_user_id
+	`, projectID, authorUserID, input.Title, input.Body))
+	return item, err
+}
+
+func (s *PostgresStore) UpdateProjectDiscussionStatus(ctx context.Context, discussionID, status, operatorUserID string) (domain.ProjectDiscussion, bool, error) {
+	item, err := s.scanProjectDiscussion(s.pool.QueryRow(ctx, `
+		with updated as (
+			update project_discussions
+			set status = $2,
+				closed_by_user_id = case when $2 = 'closed' then $3::uuid else null end,
+				closed_at = case when $2 = 'closed' then now() else null end,
+				updated_at = now()
+			where id::text = $1
+			returning *
+		)
+		select d.id::text, d.project_id::text, p.name, p.username, p.slug,
+			d.author_user_id::text, coalesce(author.username, ''), author.email,
+			d.title, d.body, d.status,
+			(select count(*) from project_discussion_comments c where c.discussion_id = d.id)::int,
+			d.last_commented_at, coalesce(d.closed_by_user_id::text, ''), coalesce(closer.username, ''),
+			coalesce(d.closed_at, '0001-01-01T00:00:00Z'::timestamptz), d.created_at, d.updated_at
+		from updated d
+		join projects p on p.id = d.project_id
+		join users author on author.id = d.author_user_id
+		left join users closer on closer.id = d.closed_by_user_id
+	`, discussionID, status, operatorUserID))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.ProjectDiscussion{}, false, nil
+		}
+		return domain.ProjectDiscussion{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *PostgresStore) ListProjectDiscussionComments(ctx context.Context, discussionID string) ([]domain.ProjectDiscussionComment, error) {
+	rows, err := s.pool.Query(ctx, `
+		select c.id::text, c.discussion_id::text, c.author_user_id::text, coalesce(u.username, ''), u.email, c.body, c.created_at, c.updated_at
+		from project_discussion_comments c
+		join users u on u.id = c.author_user_id
+		where c.discussion_id::text = $1
+		order by c.created_at asc
+	`, discussionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.ProjectDiscussionComment{}
+	for rows.Next() {
+		var item domain.ProjectDiscussionComment
+		if err := rows.Scan(&item.ID, &item.DiscussionID, &item.AuthorUserID, &item.AuthorUsername, &item.AuthorEmail, &item.Body, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) CreateProjectDiscussionComment(ctx context.Context, discussionID, authorUserID string, input domain.ProjectDiscussionCommentCreateInput) (domain.ProjectDiscussionComment, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return domain.ProjectDiscussionComment{}, err
+	}
+	defer tx.Rollback(ctx)
+	var item domain.ProjectDiscussionComment
+	err = tx.QueryRow(ctx, `
+		insert into project_discussion_comments (discussion_id, author_user_id, body)
+		values ($1::uuid, $2::uuid, $3)
+		returning id::text, discussion_id::text, author_user_id::text, body, created_at, updated_at
+	`, discussionID, authorUserID, input.Body).Scan(&item.ID, &item.DiscussionID, &item.AuthorUserID, &item.Body, &item.CreatedAt, &item.UpdatedAt)
+	if err != nil {
+		return domain.ProjectDiscussionComment{}, err
+	}
+	_, err = tx.Exec(ctx, `update project_discussions set last_commented_at = now(), updated_at = now() where id::text = $1`, discussionID)
+	if err != nil {
+		return domain.ProjectDiscussionComment{}, err
+	}
+	var username, email string
+	if err := tx.QueryRow(ctx, `select coalesce(username, ''), email from users where id::text = $1`, authorUserID).Scan(&username, &email); err != nil {
+		return domain.ProjectDiscussionComment{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.ProjectDiscussionComment{}, err
+	}
+	item.AuthorUsername = username
+	item.AuthorEmail = email
+	return item, nil
+}
+
+func (s *PostgresStore) scanProjectProposal(row rowScanner) (domain.ProjectProposal, error) {
+	var item domain.ProjectProposal
+	var sourceUsername, sourceSlug, targetUsername, targetSlug string
+	err := row.Scan(
+		&item.ID, &item.SourceProjectID, &item.SourceProjectName, &sourceUsername, &sourceSlug,
+		&item.TargetProjectID, &item.TargetProjectName, &targetUsername, &targetSlug,
+		&item.AuthorUserID, &item.AuthorUsername, &item.AuthorEmail,
+		&item.TargetOwnerUserID, &item.TargetOwnerUsername, &item.TargetOwnerEmail,
+		&item.Title, &item.Body, &item.Status, &item.SourceReleaseID, &item.MergedReleaseID,
+		&item.ReviewNote, &item.ReviewedBy, &item.ReviewedAt, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return domain.ProjectProposal{}, err
+	}
+	item.SourceProjectURL = buildPublicURL(s.publicBase, sourceUsername, sourceSlug)
+	item.TargetProjectURL = buildPublicURL(s.publicBase, targetUsername, targetSlug)
+	return item, nil
+}
+
+const projectProposalSelectSQL = `
+	select pr.id::text,
+		pr.source_project_id::text, coalesce(sp.name, ''), coalesce(sp.username, ''), coalesce(sp.slug, ''),
+		pr.target_project_id::text, coalesce(tp.name, ''), coalesce(tp.username, ''), coalesce(tp.slug, ''),
+		pr.author_user_id::text, coalesce(author.username, ''), coalesce(author.email, ''),
+		pr.target_owner_user_id::text, coalesce(owner.username, ''), coalesce(owner.email, ''),
+		pr.title, pr.body, pr.status, pr.source_release_id::text, coalesce(pr.merged_release_id::text, ''),
+		pr.review_note, coalesce(pr.reviewed_by_user_id::text, ''), coalesce(pr.reviewed_at, '0001-01-01T00:00:00Z'::timestamptz),
+		pr.created_at, pr.updated_at
+	from project_proposals pr
+	join projects sp on sp.id = pr.source_project_id
+	join projects tp on tp.id = pr.target_project_id
+	join users author on author.id = pr.author_user_id
+	join users owner on owner.id = pr.target_owner_user_id`
+
+func (s *PostgresStore) ListProjectProposalsForSource(ctx context.Context, sourceProjectID string) ([]domain.ProjectProposal, error) {
+	rows, err := s.pool.Query(ctx, projectProposalSelectSQL+` where pr.source_project_id::text = $1 order by pr.created_at desc`, sourceProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.ProjectProposal{}
+	for rows.Next() {
+		item, err := s.scanProjectProposal(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) ListProjectProposalsForTarget(ctx context.Context, targetProjectID, status string) ([]domain.ProjectProposal, error) {
+	query := projectProposalSelectSQL + ` where pr.target_project_id::text = $1`
+	args := []any{targetProjectID}
+	if strings.TrimSpace(status) != "" {
+		args = append(args, status)
+		query += fmt.Sprintf(" and pr.status = $%d", len(args))
+	}
+	query += ` order by pr.created_at desc`
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.ProjectProposal{}
+	for rows.Next() {
+		item, err := s.scanProjectProposal(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) ListUserProjectProposals(ctx context.Context, userID string) ([]domain.ProjectProposal, error) {
+	rows, err := s.pool.Query(ctx, projectProposalSelectSQL+` where pr.author_user_id::text = $1 or pr.target_owner_user_id::text = $1 order by pr.created_at desc`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.ProjectProposal{}
+	for rows.Next() {
+		item, err := s.scanProjectProposal(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) GetProjectProposal(ctx context.Context, proposalID string) (domain.ProjectProposal, bool, error) {
+	item, err := s.scanProjectProposal(s.pool.QueryRow(ctx, projectProposalSelectSQL+` where pr.id::text = $1`, proposalID))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.ProjectProposal{}, false, nil
+		}
+		return domain.ProjectProposal{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *PostgresStore) CreateProjectProposal(ctx context.Context, input domain.ProjectProposal) (domain.ProjectProposal, error) {
+	item, err := s.scanProjectProposal(s.pool.QueryRow(ctx, `
+		with created as (
+			insert into project_proposals (source_project_id, target_project_id, author_user_id, target_owner_user_id, title, body, status, source_release_id)
+			values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, 'open', $7::uuid)
+			returning *
+		)`+strings.Replace(projectProposalSelectSQL, "from project_proposals pr", "from created pr", 1),
+		input.SourceProjectID, input.TargetProjectID, input.AuthorUserID, input.TargetOwnerUserID, input.Title, input.Body, input.SourceReleaseID))
+	return item, err
+}
+
+func (s *PostgresStore) ReviewProjectProposal(ctx context.Context, proposalID, status, note, reviewedByUserID, mergedReleaseID string) (domain.ProjectProposal, bool, error) {
+	item, err := s.scanProjectProposal(s.pool.QueryRow(ctx, `
+		with updated as (
+			update project_proposals
+			set status=$2, review_note=$3, reviewed_by_user_id=nullif($4,'')::uuid,
+				merged_release_id=nullif($5,'')::uuid, reviewed_at=now(), updated_at=now()
+			where id::text=$1
+			returning *
+		)`+strings.Replace(projectProposalSelectSQL, "from project_proposals pr", "from updated pr", 1), proposalID, status, note, reviewedByUserID, mergedReleaseID))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.ProjectProposal{}, false, nil
+		}
+		return domain.ProjectProposal{}, false, err
+	}
+	return item, true, nil
 }
 
 func (s *PostgresStore) ListAdminProjects(ctx context.Context) ([]domain.AdminProjectSummary, error) {
@@ -396,54 +1008,65 @@ func (s *PostgresStore) ListAdminProjects(ctx context.Context) ([]domain.AdminPr
 }
 
 func (s *PostgresStore) CreateProject(ctx context.Context, userID string, input domain.ProjectCreateInput) (domain.Project, error) {
-	var project domain.Project
-	err := s.pool.QueryRow(ctx, `
-		insert into projects (owner_user_id, username, slug, name, interactive, analytics_enabled, visibility, public_key)
-		values ($1::uuid, $2, $3, $4, $5, $6, 'unlisted', encode(gen_random_bytes(24), 'hex'))
-		returning id::text, username, slug, name, interactive, analytics_enabled, visibility, coalesce(current_release_id::text, ''), created_at
-	`, userID, input.Username, input.Slug, input.Name, input.Interactive, input.AnalyticsEnabled).Scan(
-		&project.ID,
-		&project.Username,
-		&project.Slug,
-		&project.Name,
-		&project.Interactive,
-		&project.AnalyticsEnabled,
-		&project.Visibility,
-		&project.CurrentRelease,
-		&project.CreatedAt,
-	)
+	project, err := s.scanProject(s.pool.QueryRow(ctx, `
+		with created as (
+			insert into projects (owner_user_id, username, slug, name, interactive, analytics_enabled, show_on_profile, allow_forks, visibility, public_key)
+			values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, 'unlisted', encode(gen_random_bytes(24), 'hex'))
+			returning *
+		)
+		select `+projectSelectSQL("p")+`
+		from created p
+		`+projectSourceJoinSQL("p")+`
+	`, userID, input.Username, input.Slug, input.Name, input.Interactive, input.AnalyticsEnabled, input.ShowOnProfile, input.AllowForks))
 	if err != nil {
 		return domain.Project{}, err
 	}
-	project.PublicURL = buildPublicURL(s.publicBase, project.Username, project.Slug)
 	return project, nil
 }
 
 func (s *PostgresStore) GetProject(ctx context.Context, userID, projectID string) (domain.Project, bool, error) {
-	var project domain.Project
-	err := s.pool.QueryRow(ctx, `
-		select id::text, username, slug, name, interactive, analytics_enabled, visibility, coalesce(current_release_id::text, ''), created_at
-		from projects
-		where id::text = $1 and owner_user_id::text = $2
-	`, projectID, userID).Scan(
-		&project.ID,
-		&project.Username,
-		&project.Slug,
-		&project.Name,
-		&project.Interactive,
-		&project.AnalyticsEnabled,
-		&project.Visibility,
-		&project.CurrentRelease,
-		&project.CreatedAt,
-	)
+	project, err := s.scanProject(s.pool.QueryRow(ctx, `
+		select `+projectSelectSQL("p")+`
+		from projects p
+		`+projectSourceJoinSQL("p")+`
+		where p.id::text = $1 and p.owner_user_id::text = $2
+	`, projectID, userID))
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return domain.Project{}, false, nil
 		}
 		return domain.Project{}, false, err
 	}
-	project.PublicURL = buildPublicURL(s.publicBase, project.Username, project.Slug)
 	return project, true, nil
+}
+
+func (s *PostgresStore) CreateForkProject(ctx context.Context, userID string, input domain.ProjectCreateInput, source domain.Project) (domain.Project, error) {
+	sourceOwner := strings.TrimSpace(source.Username)
+	sourceName := strings.TrimSpace(source.Name)
+	sourceURL := strings.TrimSpace(source.PublicURL)
+	project, err := s.scanProject(s.pool.QueryRow(ctx, `
+		with created as (
+			insert into projects (
+				owner_user_id, username, slug, name, interactive, analytics_enabled, show_on_profile, allow_forks, visibility, public_key,
+				forked_from_project_id, forked_from_release_id, forked_from_user_id,
+				forked_from_snapshot_name, forked_from_snapshot_owner, forked_from_snapshot_url
+			)
+			values (
+				$1::uuid, $2, $3, $4, $5, $6, $7, $8, 'unlisted', encode(gen_random_bytes(24), 'hex'),
+				nullif($9, '')::uuid, nullif($10, '')::uuid, nullif($11, '')::uuid,
+				$12, $13, $14
+			)
+			returning *
+		)
+		select `+projectSelectSQL("p")+`
+		from created p
+		`+projectSourceJoinSQL("p")+`
+	`, userID, input.Username, input.Slug, input.Name, input.Interactive, input.AnalyticsEnabled, input.ShowOnProfile, input.AllowForks,
+		source.ID, source.CurrentRelease, "", sourceName, sourceOwner, sourceURL))
+	if err != nil {
+		return domain.Project{}, err
+	}
+	return project, nil
 }
 
 func (s *PostgresStore) DeleteProject(ctx context.Context, userID, projectID string) (bool, error) {
@@ -460,7 +1083,7 @@ func (s *PostgresStore) DeleteProject(ctx context.Context, userID, projectID str
 func (s *PostgresStore) GetProjectPublicAccess(ctx context.Context, projectID string) (domain.PublicProjectAccess, bool, error) {
 	var access domain.PublicProjectAccess
 	err := s.pool.QueryRow(ctx, `
-		select p.id::text, p.username, p.slug, p.name, p.interactive, p.analytics_enabled, p.visibility, coalesce(p.current_release_id::text, ''), p.created_at, p.public_key, p.owner_user_id::text, u.role, u.plan_code
+		select p.id::text, p.username, p.slug, p.name, p.interactive, p.analytics_enabled, p.show_on_profile, p.allow_forks, p.visibility, coalesce(p.current_release_id::text, ''), p.created_at, p.public_key, p.owner_user_id::text, u.role, u.plan_code
 		from projects p
 		join users u on u.id = p.owner_user_id
 		where p.id::text = $1
@@ -471,6 +1094,8 @@ func (s *PostgresStore) GetProjectPublicAccess(ctx context.Context, projectID st
 		&access.Project.Name,
 		&access.Project.Interactive,
 		&access.Project.AnalyticsEnabled,
+		&access.Project.ShowOnProfile,
+		&access.Project.AllowForks,
 		&access.Project.Visibility,
 		&access.Project.CurrentRelease,
 		&access.Project.CreatedAt,
@@ -688,34 +1313,210 @@ func (s *PostgresStore) UpdateProjectPath(ctx context.Context, userID, projectID
 }
 
 func (s *PostgresStore) UpdateProjectSettings(ctx context.Context, userID, projectID string, input domain.ProjectSettingsUpdateInput) (domain.Project, bool, error) {
-	var project domain.Project
-	err := s.pool.QueryRow(ctx, `
-		update projects
-		set name = $3,
-			slug = $4,
-			interactive = $5,
-			analytics_enabled = $6
-		where id::text = $1 and owner_user_id::text = $2
-		returning id::text, username, slug, name, interactive, analytics_enabled, visibility, coalesce(current_release_id::text, ''), created_at
-	`, projectID, userID, input.Name, input.Slug, input.Interactive, input.AnalyticsEnabled).Scan(
-		&project.ID,
-		&project.Username,
-		&project.Slug,
-		&project.Name,
-		&project.Interactive,
-		&project.AnalyticsEnabled,
-		&project.Visibility,
-		&project.CurrentRelease,
-		&project.CreatedAt,
-	)
+	project, err := s.scanProject(s.pool.QueryRow(ctx, `
+		with updated as (
+			update projects
+			set name = $3,
+				slug = $4,
+				interactive = $5,
+				analytics_enabled = $6,
+				show_on_profile = $7,
+				allow_forks = $8
+			where id::text = $1 and owner_user_id::text = $2
+			returning *
+		)
+		select `+projectSelectSQL("p")+`
+		from updated p
+		`+projectSourceJoinSQL("p")+`
+	`, projectID, userID, input.Name, input.Slug, input.Interactive, input.AnalyticsEnabled, input.ShowOnProfile, input.AllowForks))
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return domain.Project{}, false, nil
 		}
 		return domain.Project{}, false, err
 	}
-	project.PublicURL = buildPublicURL(s.publicBase, project.Username, project.Slug)
 	return project, true, nil
+}
+
+func (s *PostgresStore) GetAppBuildSettings(ctx context.Context, userID, projectID string) (domain.AppBuildSettings, bool, error) {
+	item, err := scanAppBuildSettings(s.pool.QueryRow(ctx, `
+		select id::text, user_id::text, project_id::text, app_name,
+			android_enabled, windows_enabled, auto_update,
+			android_package_name, windows_package_name, created_at, updated_at
+		from app_build_settings
+		where user_id::text = $1 and project_id::text = $2
+	`, userID, projectID))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.AppBuildSettings{}, false, nil
+		}
+		return domain.AppBuildSettings{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *PostgresStore) UpsertAppBuildSettings(ctx context.Context, userID, projectID string, input domain.AppBuildSettingsInput) (domain.AppBuildSettings, error) {
+	item, err := scanAppBuildSettings(s.pool.QueryRow(ctx, `
+		insert into app_build_settings (
+			user_id, project_id, app_name, android_enabled, windows_enabled, auto_update,
+			android_package_name, windows_package_name
+		)
+		values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8)
+		on conflict (project_id) do update set
+			app_name = excluded.app_name,
+			android_enabled = excluded.android_enabled,
+			windows_enabled = excluded.windows_enabled,
+			auto_update = excluded.auto_update,
+			android_package_name = excluded.android_package_name,
+			windows_package_name = excluded.windows_package_name,
+			updated_at = now()
+		returning id::text, user_id::text, project_id::text, app_name,
+			android_enabled, windows_enabled, auto_update,
+			android_package_name, windows_package_name, created_at, updated_at
+	`, userID, projectID, input.AppName, input.AndroidEnabled, input.WindowsEnabled, input.AutoUpdate, input.AndroidPackageName, input.WindowsPackageName))
+	return item, err
+}
+
+func (s *PostgresStore) CreateAppBuildJob(ctx context.Context, input domain.AppBuildJob) (domain.AppBuildJob, error) {
+	item, err := scanAppBuildJob(s.pool.QueryRow(ctx, `
+		insert into app_build_jobs (
+			user_id, project_id, release_id, platform, app_name, package_name,
+			version_code, version_name, auto_update, status, error_message
+		)
+		values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11)
+		returning id::text, user_id::text, project_id::text, release_id::text, platform,
+			app_name, package_name, version_code, version_name, auto_update, status,
+			artifact_path, artifact_sha256, artifact_size, github_run_id, error_message, created_at, updated_at
+	`, input.UserID, input.ProjectID, input.ReleaseID, input.Platform, input.AppName, input.PackageName,
+		input.VersionCode, input.VersionName, input.AutoUpdate, input.Status, input.ErrorMessage))
+	return item, err
+}
+
+func (s *PostgresStore) GetAppBuildJob(ctx context.Context, jobID string) (domain.AppBuildJob, bool, error) {
+	item, err := scanAppBuildJob(s.pool.QueryRow(ctx, `
+		select id::text, user_id::text, project_id::text, release_id::text, platform,
+			app_name, package_name, version_code, version_name, auto_update, status,
+			artifact_path, artifact_sha256, artifact_size, github_run_id, error_message, created_at, updated_at
+		from app_build_jobs
+		where id::text = $1
+	`, jobID))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.AppBuildJob{}, false, nil
+		}
+		return domain.AppBuildJob{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *PostgresStore) ListAppBuildJobs(ctx context.Context, userID, projectID string) ([]domain.AppBuildJob, error) {
+	rows, err := s.pool.Query(ctx, `
+		select id::text, user_id::text, project_id::text, release_id::text, platform,
+			app_name, package_name, version_code, version_name, auto_update, status,
+			artifact_path, artifact_sha256, artifact_size, github_run_id, error_message, created_at, updated_at
+		from app_build_jobs
+		where user_id::text = $1 and project_id::text = $2
+		order by created_at desc
+	`, userID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.AppBuildJob
+	for rows.Next() {
+		item, err := scanAppBuildJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) CountAppBuildJobsForUserSince(ctx context.Context, userID, platform string, since time.Time) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx, `
+		select count(*)::int
+		from app_build_jobs
+		where user_id::text = $1 and platform = $2 and created_at >= $3
+			and status in ('pending', 'building', 'succeeded')
+	`, userID, platform, since).Scan(&count)
+	return count, err
+}
+
+func (s *PostgresStore) CompleteAppBuildJob(ctx context.Context, jobID string, input domain.AppBuildCompleteInput) (domain.AppBuildJob, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return domain.AppBuildJob{}, false, err
+	}
+	defer tx.Rollback(ctx)
+	item, err := scanAppBuildJob(tx.QueryRow(ctx, `
+		update app_build_jobs
+		set status = $2,
+			artifact_path = coalesce(nullif($3, ''), artifact_path),
+			artifact_sha256 = coalesce(nullif($4, ''), artifact_sha256),
+			artifact_size = case when $5 > 0 then $5 else artifact_size end,
+			github_run_id = coalesce(nullif($6, ''), github_run_id),
+			error_message = $7,
+			updated_at = now()
+		where id::text = $1
+		returning id::text, user_id::text, project_id::text, release_id::text, platform,
+			app_name, package_name, version_code, version_name, auto_update, status,
+			artifact_path, artifact_sha256, artifact_size, github_run_id, error_message, created_at, updated_at
+	`, jobID, input.Status, input.ArtifactPath, input.ArtifactSHA256, input.ArtifactSize, input.GitHubRunID, input.ErrorMessage))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.AppBuildJob{}, false, nil
+		}
+		return domain.AppBuildJob{}, false, err
+	}
+	if item.Status == "succeeded" && item.ArtifactPath != "" {
+		updateDownloadURL := item.ArtifactPath
+		if item.Platform == "windows" {
+			updateDownloadURL = item.ArtifactPath + "?kind=update"
+		}
+		_, err = tx.Exec(ctx, `
+			insert into app_update_channels (
+				project_id, platform, channel, latest_job_id, latest_release_id,
+				latest_version_code, latest_version_name, download_url, sha256, size, release_note, updated_at
+			)
+			values ($1::uuid, $2, 'stable', $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10, now())
+			on conflict (project_id, platform, channel) do update set
+				latest_job_id = excluded.latest_job_id,
+				latest_release_id = excluded.latest_release_id,
+				latest_version_code = excluded.latest_version_code,
+				latest_version_name = excluded.latest_version_name,
+				download_url = excluded.download_url,
+				sha256 = excluded.sha256,
+				size = excluded.size,
+				release_note = excluded.release_note,
+				updated_at = now()
+		`, item.ProjectID, item.Platform, item.ID, item.ReleaseID, item.VersionCode, item.VersionName, updateDownloadURL, item.ArtifactSHA256, item.ArtifactSize, "作者更新了作品内容")
+		if err != nil {
+			return domain.AppBuildJob{}, false, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.AppBuildJob{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *PostgresStore) GetAppUpdateInfo(ctx context.Context, projectID, platform string, versionCode int) (domain.AppUpdateInfo, error) {
+	var info domain.AppUpdateInfo
+	err := s.pool.QueryRow(ctx, `
+		select latest_version_code, latest_version_name, release_note, download_url, sha256, size, force_update
+		from app_update_channels
+		where project_id::text = $1 and platform = $2 and channel = 'stable'
+	`, projectID, platform).Scan(&info.LatestVersionCode, &info.LatestVersionName, &info.ReleaseNote, &info.DownloadURL, &info.SHA256, &info.Size, &info.Force)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.AppUpdateInfo{HasUpdate: false}, nil
+		}
+		return domain.AppUpdateInfo{}, err
+	}
+	info.HasUpdate = info.LatestVersionCode > versionCode && info.DownloadURL != ""
+	return info, nil
 }
 
 func (s *PostgresStore) ListCollections(ctx context.Context, projectID string) ([]domain.Collection, error) {

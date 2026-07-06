@@ -12,24 +12,46 @@ type BackTarget = {
 const STORAGE_KEY = "playpage:lastRouteBackTarget";
 
 const routeLabels: Array<[RegExp, string]> = [
+  [/^\/$/, "首页"],
+  [/^\/@[^/]+$/, "作者主页"],
   [/^\/projects$/, "我的作品"],
   [/^\/projects\/new$/, "创建作品"],
+  [/^\/projects\/fork$/, "改编作品"],
   [/^\/projects\/repair$/, "AI 网页急救站活动"],
+  [/^\/projects\/[^/]+\/app-builds$/, "导出安装包"],
+  [/^\/projects\/[^/]+\/discussions$/, "讨论区"],
+  [/^\/projects\/[^/]+\/discussions\/new$/, "发起讨论"],
+  [/^\/projects\/[^/]+\/discussions\/[^/]+$/, "讨论详情"],
+  [/^\/projects\/[^/]+\/proposals$/, "改进提案"],
+  [/^\/projects\/[^/]+\/proposals\/new$/, "新增提案"],
+  [/^\/projects\/[^/]+\/proposals\/[^/]+$/, "提案详情"],
+  [/^\/projects\/[^/]+\/releases$/, "历史版本"],
   [/^\/projects\/[^/]+\/repair$/, "提交修复申请"],
   [/^\/projects\/[^/]+\/repair\/requests$/, "修复申请"],
   [/^\/projects\/[^/]+\/repair\/[^/]+\/ai$/, "AI 圆桌"],
   [/^\/projects\/[^/]+\/repair\/[^/]+\/roundtable$/, "圆桌聊天记录"],
   [/^\/projects\/[^/]+\/domains$/, "申请独立网址"],
   [/^\/projects\/[^/]+\/interactive$/, "互动功能"],
+  [/^\/projects\/[^/]+\/interactive\/export$/, "导出互动数据"],
   [/^\/projects\/[^/]+\/settings$/, "作品设置"],
   [/^\/projects\/[^/]+\/stats$/, "统计数据"],
+  [/^\/contest$/, "创作比赛"],
+  [/^\/contest\/submit$/, "提交参赛作品"],
+  [/^\/templates$/, "模板市场"],
+  [/^\/templates\/submit$/, "投稿模板"],
+  [/^\/templates\/[^/]+$/, "模板详情"],
   [/^\/me$/, "个人中心"],
+  [/^\/me\/profile$/, "个人资料"],
+  [/^\/me\/favorites$/, "我的收藏"],
+  [/^\/me\/following$/, "我的关注"],
+  [/^\/me\/proposals$/, "我的提案"],
   [/^\/me\/upgrade$/, "升级套餐"],
   [/^\/me\/upgrade\/pay$/, "套餐支付"],
   [/^\/square$/, "作品广场"],
   [/^\/auth$/, "登录或注册"],
   [/^\/auth\/profile$/, "设置公开名字"],
-  [/^\/admin$/, "管理后台"]
+  [/^\/admin$/, "管理后台"],
+  [/^\/admin\/contest$/, "创作比赛管理"]
 ];
 
 function normalizePath(path: string): string {

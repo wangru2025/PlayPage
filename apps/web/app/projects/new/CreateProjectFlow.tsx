@@ -11,6 +11,7 @@ type CreateProjectResponse = {
   name: string;
   interactive: boolean;
   analyticsEnabled: boolean;
+  showOnProfile: boolean;
   visibility: string;
   publicUrl: string;
   currentReleaseId?: string;
@@ -57,6 +58,11 @@ const text = {
   interactiveList3: "你不需要自己理解 key，只需要复制给 AI",
   analytics: "启用访问量统计",
   analyticsHint: "启用后，PlayPage 会在作品页面中加入访问统计代码，用来统计每日访问量和互动 API 请求情况。",
+  showOnProfile: "在作者主页展示这个作品",
+  showOnProfileHint: "关闭后，别人打开你的作者主页不会看到这个作品，但你仍可在我的作品里管理它，作品直链不受影响。",
+  allowForks: "允许别人改编这个作品",
+  allowForksHint:
+    "允许后，其他登录用户可以复制一份到自己的作品里继续创作。原作品不会被修改，互动数据不会被复制，改编作品会显示来源。",
   analyticsTitle: "访问量统计说明",
   analyticsSummary: "启用后，PlayPage 会在作品 HTML 中加入一段访问统计代码。它会记录每日访问量和互动 API 请求统计，包括请求次数、成功次数、失败次数、成功率和失败率。它不会读取页面输入内容、密码或互动数据。你下载作品源码时，也会下载包含这段统计代码的版本。",
   uploadType: "上传方式",
@@ -210,6 +216,8 @@ export function CreateProjectFlow() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [interactive, setInteractive] = useState(false);
   const [analyticsEnabled, setAnalyticsEnabled] = useState(false);
+  const [showOnProfile, setShowOnProfile] = useState(true);
+  const [allowForks, setAllowForks] = useState(true);
   const [mode, setMode] = useState<UploadMode>("zip");
   const [file, setFile] = useState<File | null>(null);
   const [htmlText, setHtmlText] = useState("");
@@ -433,7 +441,9 @@ export function CreateProjectFlow() {
           name,
           slug: normalizePathText(slug),
           interactive: effectiveInteractive,
-          analyticsEnabled
+          analyticsEnabled,
+          showOnProfile,
+          allowForks
         });
         targetProjectId = project.id;
         targetInteractive = project.interactive;
@@ -559,6 +569,32 @@ export function CreateProjectFlow() {
                   {text.analytics}
                 </label>
                 <p className="field-note">{text.analyticsHint}</p>
+              </div>
+
+              <div className="field">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showOnProfile}
+                    onChange={(event) => setShowOnProfile(event.target.checked)}
+                  />
+                  {" "}
+                  {text.showOnProfile}
+                </label>
+                <p className="field-note">{text.showOnProfileHint}</p>
+              </div>
+
+              <div className="field">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={allowForks}
+                    onChange={(event) => setAllowForks(event.target.checked)}
+                  />
+                  {" "}
+                  {text.allowForks}
+                </label>
+                <p className="field-note">{text.allowForksHint}</p>
               </div>
 
               {analyticsEnabled ? (

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -199,7 +200,7 @@ func (rt *Router) handleListReleases(w http.ResponseWriter, r *http.Request, pro
 }
 
 func (rt *Router) handleCreateRelease(w http.ResponseWriter, r *http.Request, projectID string) {
-	_, project, ok := rt.requireOwnedProject(w, r, projectID)
+	user, project, ok := rt.requireOwnedProject(w, r, projectID)
 	if !ok {
 		return
 	}
@@ -207,19 +208,19 @@ func (rt *Router) handleCreateRelease(w http.ResponseWriter, r *http.Request, pr
 	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
 	switch mode {
 	case "", "zip":
-		rt.handleCreateReleaseFromZip(w, r, project)
+		rt.handleCreateReleaseFromZip(w, r, user, project)
 	case "html":
-		rt.handleCreateReleaseFromHTMLFile(w, r, project)
+		rt.handleCreateReleaseFromHTMLFile(w, r, user, project)
 	case "text":
-		rt.handleCreateReleaseFromHTMLText(w, r, project)
+		rt.handleCreateReleaseFromHTMLText(w, r, user, project)
 	case "template":
-		rt.handleCreateReleaseFromTemplate(w, r, project)
+		rt.handleCreateReleaseFromTemplate(w, r, user, project)
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "上传类型不正确"})
 	}
 }
 
-func (rt *Router) handleCreateReleaseFromZip(w http.ResponseWriter, r *http.Request, project domain.Project) {
+func (rt *Router) handleCreateReleaseFromZip(w http.ResponseWriter, r *http.Request, user domain.User, project domain.Project) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxReleaseRequestBytes)
 	if err := r.ParseMultipartForm(1200 << 20); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "上传表单无效"})
@@ -239,11 +240,13 @@ func (rt *Router) handleCreateReleaseFromZip(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	rt.notifyProjectReleaseIfNeeded(project, release)
+	rt.scheduleAppBuildsAfterRelease(user, project, release)
 
 	writeJSON(w, http.StatusCreated, release)
 }
 
-func (rt *Router) handleCreateReleaseFromHTMLFile(w http.ResponseWriter, r *http.Request, project domain.Project) {
+func (rt *Router) handleCreateReleaseFromHTMLFile(w http.ResponseWriter, r *http.Request, user domain.User, project domain.Project) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxReleaseRequestBytes)
 	if err := r.ParseMultipartForm(1200 << 20); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "上传表单无效"})
@@ -269,11 +272,13 @@ func (rt *Router) handleCreateReleaseFromHTMLFile(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	rt.notifyProjectReleaseIfNeeded(project, release)
+	rt.scheduleAppBuildsAfterRelease(user, project, release)
 
 	writeJSON(w, http.StatusCreated, release)
 }
 
-func (rt *Router) handleCreateReleaseFromHTMLText(w http.ResponseWriter, r *http.Request, project domain.Project) {
+func (rt *Router) handleCreateReleaseFromHTMLText(w http.ResponseWriter, r *http.Request, user domain.User, project domain.Project) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxReleaseRequestBytes)
 	var input struct {
 		HTML       string `json:"html"`
@@ -293,11 +298,13 @@ func (rt *Router) handleCreateReleaseFromHTMLText(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	rt.notifyProjectReleaseIfNeeded(project, release)
+	rt.scheduleAppBuildsAfterRelease(user, project, release)
 
 	writeJSON(w, http.StatusCreated, release)
 }
 
-func (rt *Router) handleCreateReleaseFromTemplate(w http.ResponseWriter, r *http.Request, project domain.Project) {
+func (rt *Router) handleCreateReleaseFromTemplate(w http.ResponseWriter, r *http.Request, user domain.User, project domain.Project) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxReleaseRequestBytes)
 	var input domain.TemplateCreateReleaseInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -358,8 +365,89 @@ func (rt *Router) handleCreateReleaseFromTemplate(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	rt.notifyProjectReleaseIfNeeded(project, release)
+	rt.scheduleAppBuildsAfterRelease(user, project, release)
 
 	writeJSON(w, http.StatusCreated, release)
+}
+
+func (rt *Router) notifyProjectReleaseIfNeeded(project domain.Project, release domain.Release) {
+	if project.Visibility != "public" {
+		return
+	}
+	if project.CurrentRelease == "" {
+		rt.notifyAuthorFollowersAsync(project, release, "new")
+		return
+	}
+	rt.notifyAuthorFollowersAsync(project, release, "update")
+}
+
+func (rt *Router) notifyAuthorFollowersAsync(project domain.Project, release domain.Release, kind string) {
+	projectID := strings.TrimSpace(project.ID)
+	if projectID == "" || strings.TrimSpace(project.Username) == "" {
+		return
+	}
+	eventKey := "project_public"
+	if kind == "update" && strings.TrimSpace(release.ID) != "" {
+		eventKey = "release:" + release.ID
+	}
+	if kind != "new" && kind != "update" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		created, err := rt.store.TryCreateProjectNotificationEvent(ctx, projectID, eventKey)
+		if err != nil {
+			log.Printf("follower_notify_event_error project_id=%s event_key=%q err=%v", projectID, eventKey, err)
+			return
+		}
+		if !created {
+			return
+		}
+		recipients, err := rt.store.ListAuthorFollowerRecipients(ctx, project.Username)
+		if err != nil {
+			log.Printf("follower_notify_list_error author=%q project_id=%s err=%v", project.Username, projectID, err)
+			return
+		}
+		if len(recipients) == 0 {
+			return
+		}
+		subject, body := buildFollowerProjectMail(project, release, kind)
+		for _, recipient := range recipients {
+			if strings.TrimSpace(recipient.Email) == "" {
+				continue
+			}
+			if err := rt.mailer.SendText(recipient.Email, subject, body); err != nil {
+				log.Printf("follower_notify_mail_error to=%q author=%q project_id=%s event_key=%q err=%v", recipient.Email, project.Username, projectID, eventKey, err)
+			}
+		}
+	}()
+}
+
+func buildFollowerProjectMail(project domain.Project, release domain.Release, kind string) (string, string) {
+	author := strings.TrimSpace(project.Username)
+	if author == "" {
+		author = "你关注的作者"
+	}
+	projectName := strings.TrimSpace(project.Name)
+	if projectName == "" {
+		projectName = "未命名作品"
+	}
+	publicURL := strings.TrimSpace(project.PublicURL)
+	if publicURL == "" {
+		publicURL = "请打开 PlayPage 查看。"
+	}
+	changeNote := strings.TrimSpace(release.ChangeNote)
+	if kind == "new" {
+		return "你关注的作者发布了新作品",
+			fmt.Sprintf("你关注的作者 @%s 在 PlayPage 发布了新作品：\n\n《%s》\n%s\n\n如果你不想继续收到这个作者的动态，可以进入作者主页取消关注。", author, projectName, publicURL)
+	}
+	if changeNote == "" {
+		changeNote = "作者没有填写更新内容。"
+	}
+	return "你关注的作品作者更新了作品",
+		fmt.Sprintf("你关注的作者 @%s 更新了 PlayPage 作品：\n\n《%s》\n%s\n\n更新内容：%s\n\n如果你不想继续收到这个作者的动态，可以进入作者主页取消关注。", author, projectName, publicURL, changeNote)
 }
 
 func (rt *Router) handleRollbackRelease(w http.ResponseWriter, r *http.Request, projectID, releaseID string) {
@@ -434,6 +522,9 @@ func (rt *Router) handleUpdateProjectVisibility(w http.ResponseWriter, r *http.R
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "找不到这个作品"})
 		return
+	}
+	if input.Visibility == "public" && project.Visibility != "public" && updated.CurrentRelease != "" {
+		rt.notifyAuthorFollowersAsync(updated, domain.Release{}, "new")
 	}
 
 	writeJSON(w, http.StatusOK, updated)
@@ -529,6 +620,31 @@ func (rt *Router) handleUpdateProjectSettings(w http.ResponseWriter, r *http.Req
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "找不到这个作品"})
 		return
+	}
+
+	if !project.AnalyticsEnabled && updated.AnalyticsEnabled && project.CurrentRelease != "" {
+		releases, err := rt.store.ListReleases(r.Context(), projectID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "设置已保存，但读取当前版本失败，请稍后重试"})
+			return
+		}
+		var sourceRelease domain.Release
+		for _, release := range releases {
+			if release.ID == project.CurrentRelease {
+				sourceRelease = release
+				break
+			}
+		}
+		if sourceRelease.ID == "" {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "设置已保存，但找不到当前发布版本，无法自动加入访问统计代码"})
+			return
+		}
+		release, err := rt.pub.PublishForkFromRelease(r.Context(), updated, sourceRelease, "开启访问量统计")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "设置已保存，但重新发布统计版本失败：" + err.Error()})
+			return
+		}
+		updated.CurrentRelease = release.ID
 	}
 
 	if project.CurrentRelease != "" && project.Slug != updated.Slug {

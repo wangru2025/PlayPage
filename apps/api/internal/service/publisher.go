@@ -131,6 +131,32 @@ func (p *Publisher) PublishPatchedHTML(ctx context.Context, project domain.Proje
 	return p.finishRelease(ctx, project, releaseKey, archiveDir, releaseDir, liveDir, archivePath, changeNote)
 }
 
+func (p *Publisher) PublishForkFromRelease(ctx context.Context, project domain.Project, source domain.Release, changeNote string) (domain.Release, error) {
+	releaseKey, archiveDir, releaseDir, liveDir, archivePath, err := p.prepareRelease(project, "fork.html")
+	if err != nil {
+		return domain.Release{}, err
+	}
+	_ = archiveDir
+	if err := copyStaticDir(source.PublicPath, releaseDir); err != nil {
+		return domain.Release{}, err
+	}
+	entryFile := strings.TrimSpace(source.EntryFile)
+	if entryFile == "" {
+		entryFile = "index.html"
+	}
+	sourceEntry := filepath.Join(source.PublicPath, entryFile)
+	if fileExists(sourceEntry) {
+		data, err := os.ReadFile(sourceEntry)
+		if err == nil {
+			_ = os.WriteFile(archivePath, data, 0o644)
+		}
+	}
+	if strings.TrimSpace(changeNote) == "" {
+		changeNote = "改编自其他作品"
+	}
+	return p.finishRelease(ctx, project, releaseKey, archiveDir, releaseDir, liveDir, archivePath, changeNote)
+}
+
 func (p *Publisher) CreatePreview(project domain.Project, sourcePublicDir, entryFile, jobID string, body []byte) (string, error) {
 	if strings.TrimSpace(jobID) == "" {
 		return "", fmt.Errorf("预览任务 ID 不能为空")
@@ -275,6 +301,12 @@ func (p *Publisher) finishRelease(
 	if err := ensureHTMLCharset(releaseDir); err != nil {
 		log.Printf("publish_release_error stage=ensure_charset project_id=%s release_dir=%q archive_path=%q error=%q", project.ID, releaseDir, archivePath, err.Error())
 		return domain.Release{}, err
+	}
+	if project.ForkedFromProjectID != "" {
+		if err := injectPlayPageRemixNotice(releaseDir, project); err != nil {
+			log.Printf("publish_release_error stage=inject_remix_notice project_id=%s release_dir=%q archive_path=%q error=%q", project.ID, releaseDir, archivePath, err.Error())
+			return domain.Release{}, err
+		}
 	}
 	if project.AnalyticsEnabled {
 		if err := injectPlayPageAnalytics(releaseDir, project.ID); err != nil {
@@ -613,6 +645,65 @@ func buildGeneratedIndexHTML(projectName string, files []string) string {
   </main>
 </body>
 </html>`
+}
+
+func injectPlayPageRemixNotice(root string, project domain.Project) error {
+	entry := detectEntryFile(root)
+	if entry == "" {
+		return nil
+	}
+	target := filepath.Join(root, entry)
+	data, err := os.ReadFile(target)
+	if err != nil {
+		return err
+	}
+	if bytes.Contains(data, []byte("data-playpage-remix-notice")) {
+		return nil
+	}
+	notice := buildPlayPageRemixNotice(project)
+	content := string(data)
+	lower := strings.ToLower(content)
+	switch {
+	case strings.Contains(lower, "<body"):
+		start := strings.Index(lower, "<body")
+		end := strings.Index(lower[start:], ">")
+		if end >= 0 {
+			insertAt := start + end + 1
+			content = content[:insertAt] + notice + content[insertAt:]
+		} else {
+			content = notice + content
+		}
+	case strings.Contains(lower, "</head>"):
+		idx := strings.Index(lower, "</head>")
+		content = content[:idx] + notice + content[idx:]
+	default:
+		content = notice + content
+	}
+	return os.WriteFile(target, []byte(content), 0o644)
+}
+
+func buildPlayPageRemixNotice(project domain.Project) string {
+	sourceOwner := strings.TrimSpace(project.ForkedFromUsername)
+	if sourceOwner == "" {
+		sourceOwner = strings.TrimSpace(project.ForkedFromSnapshotOwner)
+	}
+	sourceName := strings.TrimSpace(project.ForkedFromProjectName)
+	if sourceName == "" {
+		sourceName = strings.TrimSpace(project.ForkedFromSnapshotName)
+	}
+	if sourceOwner == "" {
+		sourceOwner = "原作者"
+	}
+	if sourceName == "" {
+		sourceName = "原作品"
+	}
+	href := "/api/v1/public/projects/" + url.PathEscape(project.ForkedFromProjectID) + "/open"
+	return `
+<!-- PlayPage 改编来源提示：这个作品是从其他公开作品改编而来，平台会保留来源说明。 -->
+<div data-playpage-remix-notice style="box-sizing:border-box;width:100%;padding:10px 14px;background:#fff7ed;color:#4a2b12;border-bottom:1px solid #fed7aa;font:14px/1.6 system-ui,-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;position:relative;z-index:2147483000;">
+  本作品改编自 <a href="` + html.EscapeString(href) + `" target="_blank" rel="noopener noreferrer" style="color:#9a3412;font-weight:700;text-decoration:underline;">` + html.EscapeString(sourceOwner) + ` 的《` + html.EscapeString(sourceName) + `》</a>
+</div>
+`
 }
 
 func injectPlayPageAnalytics(root, projectID string) error {
